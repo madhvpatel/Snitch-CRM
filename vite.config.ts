@@ -7,6 +7,7 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   const apiOrigin = env.VITE_API_ORIGIN || 'https://snitch-server-x3qn.onrender.com';
   return {
+    base: '/Snitch-CRM/',
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),

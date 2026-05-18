@@ -39,6 +39,96 @@ export interface EvidenceVault {
   moreProofRequested?: boolean;
 }
 
+export interface AudioDeconstructionArtifact {
+  stem: string;
+  assetId: string;
+  mimeType: string;
+  sizeBytes?: number;
+  url: string;
+}
+
+export interface AudioDeconstruction {
+  status: 'completed' | 'failed' | 'skipped' | 'unknown';
+  provider: string;
+  model?: string | null;
+  device?: string | null;
+  jobId?: string | null;
+  preferredStem?: string | null;
+  peakSelectionStem?: string | null;
+  fingerprintStem?: string | null;
+  usedForPeakSelection?: boolean;
+  usedForFingerprinting?: boolean;
+  summary?: string;
+  error?: string | null;
+  artifacts: AudioDeconstructionArtifact[];
+}
+
+export interface LocationDelta {
+  selectedVenueDistanceStartMeters?: number | null;
+  selectedVenueDistanceEndMeters?: number | null;
+  matchedVenueDistanceStartMeters?: number | null;
+  matchedVenueDistanceEndMeters?: number | null;
+  minVenueDistanceMeters?: number | null;
+  maxVenueDistanceMeters?: number | null;
+  avgVenueDistanceMeters?: number | null;
+  venueAnchorDeltaMeters?: number | null;
+  capturePathDeltaMeters?: number | null;
+  accuracyStartMeters?: number | null;
+  accuracyEndMeters?: number | null;
+  averageAccuracyMeters?: number | null;
+  accuracyEnvelopeMeters?: number | null;
+  withinAccuracyEnvelope?: boolean | null;
+  selectedMatchedAligned?: boolean | null;
+  geoBucket?: string | null;
+  primaryVenueSource?: string | null;
+}
+
+export interface VenueAttribution {
+  status: string;
+  actualSource?: string | null;
+  targetVenue?: string | null;
+  matchedVenue?: string | null;
+  visualSource?: string | null;
+  selectedVenueDistanceStartMeters?: number | null;
+  selectedVenueDistanceEndMeters?: number | null;
+  matchedVenueDistanceStartMeters?: number | null;
+  matchedVenueDistanceEndMeters?: number | null;
+  minVenueDistanceMeters?: number | null;
+  venueAnchorDeltaMeters?: number | null;
+  accuracyEnvelopeMeters?: number | null;
+  withinAccuracyEnvelope?: boolean | null;
+  selectedMatchedAligned?: boolean | null;
+  score?: number | null;
+  unitAmbiguityRisk?: string | null;
+  adjacentCaptureRisk?: string | null;
+  legalBlock?: boolean;
+  recommendedDisposition?: string | null;
+  note?: string | null;
+}
+
+export interface VenueContext {
+  selectedVenue?: {
+    id?: string;
+    name?: string;
+    address?: string;
+    city?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    placeProviderId?: string | null;
+    placeProvider?: string | null;
+  } | null;
+  matchedVenue?: {
+    id?: string;
+    name?: string;
+    address?: string;
+    city?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    placeProviderId?: string | null;
+    placeProvider?: string | null;
+  } | null;
+}
+
 export interface Case {
   id: string;
   isNew: boolean;
@@ -83,6 +173,11 @@ export interface Case {
     obstructionFlags: string;
     performanceContext: string;
   };
+
+  audioDeconstruction?: AudioDeconstruction | null;
+  locationDelta?: LocationDelta | null;
+  venueAttribution?: VenueAttribution | null;
+  venueContext?: VenueContext | null;
   
   evidenceVaults: EvidenceVault[];
   selectedVaultIds?: string[];

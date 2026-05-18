@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vigil Intelligence CRM Mockup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080a0f;
+        --panel: #10141d;
+        --panel-2: #151a25;
+        --line: rgba(148, 163, 184, 0.14);
+        --line-strong: rgba(148, 163, 184, 0.24);
+        --text: #f8fafc;
+        --muted: #94a3b8;
+        --quiet: #64748b;
+        --blue: #3b82f6;
+        --cyan: #22d3ee;
+        --green: #10b981;
+        --amber: #f59e0b;
+        --red: #ef4444;
+        --purple: #8b5cf6;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 15% 0%, rgba(59, 130, 246, 0.14), transparent 30rem),
+          radial-gradient(circle at 90% 8%, rgba(16, 185, 129, 0.08), transparent 28rem),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--line);
+        background: rgba(10, 14, 22, 0.82);
+        padding: 22px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 8px 12px;
+      }
+
+      .brand-mark,
+      .iconbox {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: var(--blue);
+        color: white;
+        font-weight: 900;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: -0.02em;
+      }
+
+      .brand p,
+      .eyebrow,
+      .label {
+        margin: 0;
+        color: var(--quiet);
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .role-tabs {
+        display: grid;
+        gap: 8px;
+      }
+
+      .role-tab {
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        width: 100%;
+        text-align: left;
+        padding: 13px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .role-tab.active {
+        color: var(--text);
+        background: rgba(59, 130, 246, 0.12);
+        border-color: rgba(59, 130, 246, 0.26);
+      }
+
+      .role-tab span:first-child {
+        font-weight: 800;
+        font-size: 13px;
+      }
+
+      .queue {
+        display: grid;
+        gap: 10px;
+      }
+
+      .queue-card {
+        border: 1px solid var(--line);
+        background: rgba(15, 23, 42, 0.48);
+        border-radius: 8px;
+        padding: 13px;
+      }
+
+      .queue-card strong {
+        display: block;
+        font-size: 13px;
+        margin-bottom: 5px;
+      }
+
+      .queue-card p {
+        margin: 0;
+        color: var(--quiet);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .main {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .topbar {
+        min-height: 82px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 18px 28px;
+        background: rgba(8, 10, 15, 0.7);
+        backdrop-filter: blur(18px);
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+
+      .title h2 {
+        margin: 4px 0 0;
+        font-size: clamp(22px, 3vw, 32px);
+        letter-spacing: -0.04em;
+      }
+
+      .search {
+        min-width: 280px;
+        border: 1px solid var(--line);
+        background: rgba(15, 23, 42, 0.68);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 12px 14px;
+        outline: none;
+      }
+
+      .workspace {
+        padding: 28px;
+      }
+
+      .view {
+        display: none;
+      }
+
+      .view.active {
+        display: grid;
+        gap: 20px;
+      }
+
+      .authority-grid {
+        grid-template-columns: minmax(320px, 430px) minmax(0, 1fr) 360px;
+        align-items: start;
+      }
+
+      .agent-grid {
+        grid-template-columns: 380px minmax(0, 1fr);
+        align-items: start;
+      }
+
+      .litigation-grid {
+        grid-template-columns: 320px minmax(0, 1fr) 360px;
+        align-items: start;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: rgba(16, 20, 29, 0.88);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .panel.pad {
+        padding: 20px;
+      }
+
+      .panel-header {
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .panel-header h3,
+      .section-title {
+        margin: 0;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      .case-list {
+        display: grid;
+      }
+
+      .case-row {
+        border: 0;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        padding: 16px 20px;
+        cursor: pointer;
+      }
+
+      .case-row.active {
+        background: rgba(59, 130, 246, 0.1);
+        box-shadow: inset 3px 0 0 var(--blue);
+      }
+
+      .case-row h4 {
+        margin: 6px 0;
+        font-size: 15px;
+      }
+
+      .case-row p,
+      .small {
+        margin: 0;
+        color: var(--quiet);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .pills {
+        display: flex;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        padding: 5px 8px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-weight: 900;
+      }
+
+      .pill.green {
+        border-color: rgba(16, 185, 129, 0.3);
+        color: #34d399;
+        background: rgba(16, 185, 129, 0.08);
+      }
+
+      .pill.amber {
+        border-color: rgba(245, 158, 11, 0.34);
+        color: #fbbf24;
+        background: rgba(245, 158, 11, 0.08);
+      }
+
+      .pill.red {
+        border-color: rgba(239, 68, 68, 0.34);
+        color: #f87171;
+        background: rgba(239, 68, 68, 0.08);
+      }
+
+      .hero-case {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 280px;
+        gap: 20px;
+      }
+
+      .case-title {
+        padding: 22px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .case-title h3 {
+        margin: 8px 0 10px;
+        font-size: clamp(24px, 4vw, 42px);
+        letter-spacing: -0.05em;
+        line-height: 0.98;
+      }
+
+      .signal-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        padding: 18px;
+      }
+
+      .signal {
+        border: 1px solid var(--line);
+        background: rgba(8, 10, 15, 0.34);
+        border-radius: 8px;
+        padding: 14px;
+      }
+
+      .signal strong {
+        display: block;
+        font-size: 24px;
+        letter-spacing: -0.04em;
+      }
+
+      .decision {
+        border-left: 4px solid var(--amber);
+        background: rgba(245, 158, 11, 0.08);
+        padding: 18px;
+      }
+
+      .decision.green {
+        border-color: var(--green);
+        background: rgba(16, 185, 129, 0.08);
+      }
+
+      .decision.purple {
+        border-color: var(--purple);
+        background: rgba(139, 92, 246, 0.09);
+      }
+
+      .decision h4 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+
+      .decision p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .matrix {
+        display: grid;
+        gap: 10px;
+      }
+
+      .matrix-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        align-items: center;
+        border: 1px solid var(--line);
+        background: rgba(8, 10, 15, 0.26);
+        border-radius: 8px;
+        padding: 12px;
+      }
+
+      .matrix-row strong {
+        font-size: 13px;
+      }
+
+      .bar {
+        width: 92px;
+        height: 7px;
+        border-radius: 999px;
+        background: #1e293b;
+        overflow: hidden;
+      }
+
+      .bar span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--green);
+      }
+
+      .bar.amber span {
+        background: var(--amber);
+      }
+
+      .bar.red span {
+        background: var(--red);
+      }
+
+      .timeline {
+        display: grid;
+        gap: 14px;
+      }
+
+      .event {
+        display: grid;
+        grid-template-columns: 12px 1fr;
+        gap: 12px;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-top: 4px;
+        background: var(--green);
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
+      }
+
+      .dot.amber {
+        background: var(--amber);
+        box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
+      }
+
+      .event h4 {
+        margin: 0 0 3px;
+        font-size: 13px;
+      }
+
+      .actions {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .action {
+        border: 1px solid var(--line-strong);
+        background: rgba(15, 23, 42, 0.6);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 13px 14px;
+        text-align: left;
+        cursor: pointer;
+        font-weight: 800;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .action.primary {
+        background: var(--blue);
+        border-color: var(--blue);
+      }
+
+      .map {
+        min-height: 320px;
+        background:
+          linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+          radial-gradient(circle at 25% 35%, rgba(59, 130, 246, 0.24), transparent 9rem),
+          radial-gradient(circle at 68% 58%, rgba(245, 158, 11, 0.22), transparent 8rem),
+          #0b1018;
+        background-size: 36px 36px, 36px 36px, auto, auto, auto;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .pin {
+        position: absolute;
+        width: 32px;
+        height: 32px;
+        border-radius: 10px 10px 10px 2px;
+        transform: rotate(-45deg);
+        background: var(--blue);
+        display: grid;
+        place-items: center;
+        box-shadow: 0 14px 35px rgba(0, 0, 0, 0.34);
+      }
+
+      .pin span {
+        transform: rotate(45deg);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .proof-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .proof {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: rgba(8, 10, 15, 0.26);
+      }
+
+      .check {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        color: var(--quiet);
+        font-size: 12px;
+      }
+
+      .check.done {
+        color: white;
+        border-color: var(--green);
+        background: var(--green);
+      }
+
+      .legal-note {
+        min-height: 240px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 18px;
+        background: rgba(8, 10, 15, 0.38);
+      }
+
+      .legal-note h4 {
+        margin: 0 0 12px;
+      }
+
+      .legal-note p {
+        margin: 0 0 12px;
+        color: var(--muted);
+        line-height: 1.58;
+        font-size: 13px;
+      }
+
+      @media (max-width: 1180px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .role-tabs {
+          grid-template-columns: repeat(3, 1fr);
+        }
+
+        .authority-grid,
+        .agent-grid,
+        .litigation-grid,
+        .hero-case {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .topbar {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .search {
+          min-width: 0;
+          width: 100%;
+        }
+
+        .workspace {
+          padding: 16px;
+        }
+
+        .signal-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .role-tabs {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">V</div>
+          <div>
+            <h1>Vigil</h1>
+            <p>Intelligence CRM Mockup</p>
+          </div>
+        </div>
+
+        <div>
+          <p class="label" style="margin: 0 8px 10px">Role Surface</p>
+          <div class="role-tabs" aria-label="Mockup role tabs">
+            <button class="role-tab active" data-view="authority"><span>Authority</span><span>Decision</span></button>
+            <button class="role-tab" data-view="agent"><span>Agent</span><span>Proof gaps</span></button>
+            <button class="role-tab" data-view="litigation"><span>Litigation</span><span>Claim ready</span></button>
+          </div>
+        </div>
+
+        <div>
+          <p class="label" style="margin: 0 8px 10px">Queue Health</p>
+          <div class="queue">
+            <div class="queue-card">
+              <strong>1,000 submissions</strong>
+              <p>System clusters to 312 venue incidents before human review.</p>
+            </div>
+            <div class="queue-card">
+              <strong>84 ready for authority</strong>
+              <p>High value or repeat venue cases with enough evidence to triage.</p>
+            </div>
+            <div class="queue-card">
+              <strong>41 proof-gap tasks</strong>
+              <p>Agent work generated from missing venue or public-use proof.</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="title">
+            <p class="eyebrow">Evidence-led enforcement cockpit</p>
+            <h2 id="view-title">Authority Decision Cockpit</h2>
+          </div>
+          <input class="search" value="Blue Lagoon Restobar • CASE-8821" aria-label="Search mockup" />
+        </header>
+
+        <section class="workspace">
+          <div class="view authority-grid active" id="authority">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Prioritized Triage</h3>
+                <span class="pill amber">Needs call</span>
+              </div>
+              <div class="case-list">
+                <button class="case-row active">
+                  <div class="pills"><span class="pill amber">Assign Agent</span><span class="pill">₹125k</span></div>
+                  <h4>Blue Lagoon Restobar</h4>
+                  <p>Track strong, venue proof incomplete, repeat venue.</p>
+                </button>
+                <button class="case-row">
+                  <div class="pills"><span class="pill green">Send Litigation</span><span class="pill">₹310k</span></div>
+                  <h4>Skyline Rooftop</h4>
+                  <p>Strong venue identity and rights metadata.</p>
+                </button>
+                <button class="case-row">
+                  <div class="pills"><span class="pill red">Close candidate</span><span class="pill">Low value</span></div>
+                  <h4>Neon Social</h4>
+                  <p>Unknown track, failed geofence, duplicate report.</p>
+                </button>
+                <button class="case-row">
+                  <div class="pills"><span class="pill amber">Monitor</span><span class="pill">Pattern</span></div>
+                  <h4>Mosaic Bar</h4>
+                  <p>Three weak reports inside the same 90 day window.</p>
+                </button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="case-title">
+                <p class="eyebrow">CASE-8821 • Mumbai • Friday 22:30</p>
+                <h3>Blue Lagoon Restobar</h3>
+                <div class="pills">
+                  <span class="pill green">Track match strong</span>
+                  <span class="pill amber">Venue proof weak</span>
+                  <span class="pill green">Device trusted</span>
+                  <span class="pill amber">Public-use context partial</span>
+                </div>
+              </div>
+
+              <div class="signal-grid">
+                <div class="signal">
+                  <p class="label">Track confidence</p>
+                  <strong>98%</strong>
+                  <p class="small">ACR + music stem agree</p>
+                </div>
+                <div class="signal">
+                  <p class="label">Venue confidence</p>
+                  <strong>61%</strong>
+                  <p class="small">GPS cluster has 4 nearby venues</p>
+                </div>
+                <div class="signal">
+                  <p class="label">Action value</p>
+                  <strong>₹125k</strong>
+                  <p class="small">3 prior offences in 90 days</p>
+                </div>
+              </div>
+
+              <div class="decision">
+                <h4>Recommended decision: Assign to Agent</h4>
+                <p>The evidence is worth preserving, but it should not go to Litigation yet. Track identity and device trust are strong. Venue identity and public-performance context need field-level proof before a legal handoff.</p>
+              </div>
+
+              <div class="panel-header">
+                <h3>Decision Matrix</h3>
+                <span class="pill">Explainable score</span>
+              </div>
+              <div class="panel pad">
+                <div class="matrix">
+                  <div class="matrix-row"><strong>Track identification</strong><div class="bar"><span style="width:98%"></span></div></div>
+                  <div class="matrix-row"><strong>Venue identity</strong><div class="bar amber"><span style="width:61%"></span></div></div>
+                  <div class="matrix-row"><strong>Location integrity</strong><div class="bar"><span style="width:88%"></span></div></div>
+                  <div class="matrix-row"><strong>Public performance context</strong><div class="bar amber"><span style="width:58%"></span></div></div>
+                  <div class="matrix-row"><strong>Rights readiness</strong><div class="bar"><span style="width:84%"></span></div></div>
+                  <div class="matrix-row"><strong>Procedural risk</strong><div class="bar red"><span style="width:36%"></span></div></div>
+                </div>
+              </div>
+            </section>
+
+            <aside class="panel pad">
+              <p class="label">Authority next action</p>
+              <div class="actions">
+                <button class="action primary">Assign Agent <span>recommended</span></button>
+                <button class="action">Send to Litigation <span>blocked</span></button>
+                <button class="action">Keep Monitoring <span>alternate</span></button>
+                <button class="action">Close Case <span>not advised</span></button>
+              </div>
+
+              <div style="height: 22px"></div>
+              <p class="label">Blocking questions</p>
+              <div class="timeline" style="margin-top: 14px">
+                <div class="event">
+                  <div class="dot amber"></div>
+                  <div><h4>Which venue exactly?</h4><p class="small">Selected venue and GPS match disagree inside a dense cluster.</p></div>
+                </div>
+                <div class="event">
+                  <div class="dot amber"></div>
+                  <div><h4>Was it public performance?</h4><p class="small">Audio is strong, but visual context does not show source or crowd clearly.</p></div>
+                </div>
+                <div class="event">
+                  <div class="dot"></div>
+                  <div><h4>Is media integrity acceptable?</h4><p class="small">Hash, payload signature, and device trust passed.</p></div>
+                </div>
+              </div>
+            </aside>
+          </div>
+
+          <div class="view agent-grid" id="agent">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Field Assignment</h3>
+                <span class="pill amber">2.4 km route</span>
+              </div>
+              <div class="map" aria-label="Mock route map">
+                <div class="pin" style="left: 26%; top: 42%"><span>1</span></div>
+                <div class="pin" style="left: 58%; top: 30%; background: var(--amber)"><span>2</span></div>
+                <div class="pin" style="left: 72%; top: 62%; background: var(--green)"><span>3</span></div>
+              </div>
+              <div class="panel pad">
+                <p class="label">Assignment reason</p>
+                <h3 style="margin: 8px 0 8px">Fix venue and public-use proof</h3>
+                <p class="small">Authority found a strong track match but weak venue identity. Agent must collect the missing proof, not re-review the whole dossier.</p>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="case-title">
+                <p class="eyebrow">Agent proof-gap view</p>
+                <h3>What must be collected?</h3>
+                <div class="pills">
+                  <span class="pill amber">Venue identity unresolved</span>
+                  <span class="pill green">Track proof done</span>
+                  <span class="pill amber">Visual context needed</span>
+                </div>
+              </div>
+
+              <div class="panel pad">
+                <p class="label">Required proof checklist</p>
+                <div class="proof-list" style="margin-top: 14px">
+                  <div class="proof"><div class="check">1</div><div><strong>Exterior signage photo</strong><p class="small">Capture business name and entrance.</p></div><span class="pill amber">Required</span></div>
+                  <div class="proof"><div class="check">2</div><div><strong>20 second interior context video</strong><p class="small">Show music source, speaker/DJ area, and public setting.</p></div><span class="pill amber">Required</span></div>
+                  <div class="proof"><div class="check done">✓</div><div><strong>GPS at venue entrance</strong><p class="small">Start/end geolocation must align with selected venue.</p></div><span class="pill green">Captured</span></div>
+                  <div class="proof"><div class="check">4</div><div><strong>Source classification note</strong><p class="small">PA system, DJ booth, live band, or small speaker.</p></div><span class="pill amber">Required</span></div>
+                  <div class="proof"><div class="check done">✓</div><div><strong>Respect privacy constraints</strong><p class="small">Avoid unnecessary customer faces and private-party details.</p></div><span class="pill green">Policy</span></div>
+                </div>
+              </div>
+
+              <div class="decision green">
+                <h4>Agent success condition</h4>
+                <p>Return this case only when venue identity and public-performance context are strong enough that Litigation can evaluate the claim without asking for basic field facts again.</p>
+              </div>
+            </section>
+          </div>
+
+          <div class="view litigation-grid" id="litigation">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Venue Dossiers</h3>
+                <span class="pill">Legal queue</span>
+              </div>
+              <div class="case-list">
+                <button class="case-row active">
+                  <div class="pills"><span class="pill amber">Conditional</span><span class="pill">3 cases</span></div>
+                  <h4>Blue Lagoon Restobar</h4>
+                  <p>Rights good, venue proof pending Agent correction.</p>
+                </button>
+                <button class="case-row">
+                  <div class="pills"><span class="pill green">Notice ready</span><span class="pill">6 cases</span></div>
+                  <h4>Skyline Rooftop</h4>
+                  <p>Evidence package complete, high recovery probability.</p>
+                </button>
+                <button class="case-row">
+                  <div class="pills"><span class="pill red">Unsupported</span><span class="pill">1 case</span></div>
+                  <h4>Neon Social</h4>
+                  <p>Rights and venue context do not support action.</p>
+                </button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="case-title">
+                <p class="eyebrow">Legal sufficiency matrix</p>
+                <h3>Claim readiness: Conditional</h3>
+                <div class="pills">
+                  <span class="pill green">Rights owner present</span>
+                  <span class="pill green">ISRC present</span>
+                  <span class="pill amber">License status unknown</span>
+                  <span class="pill amber">Public use partial</span>
+                </div>
+              </div>
+
+              <div class="signal-grid">
+                <div class="signal"><p class="label">Forensic</p><strong>Strong</strong><p class="small">Audio + custody acceptable</p></div>
+                <div class="signal"><p class="label">Rights</p><strong>Strong</strong><p class="small">IPRS / PPL mapped</p></div>
+                <div class="signal"><p class="label">Venue liability</p><strong>Medium</strong><p class="small">Agent proof pending</p></div>
+              </div>
+
+              <div class="legal-note">
+                <h4>Draft legal recommendation</h4>
+                <p>Do not issue notice yet. The track and rights package are supportable, but venue identity and public-performance context should be strengthened before external communication.</p>
+                <p>Return to Agent with a limited proof request: signage, public setting, PA/source context, and entrance geolocation. If returned complete, prepare standard demand notice with settlement posture.</p>
+              </div>
+            </section>
+
+            <aside class="panel pad">
+              <p class="label">Notice readiness</p>
+              <div class="matrix" style="margin-top: 14px">
+                <div class="matrix-row"><strong>Rights owner</strong><span class="pill green">Pass</span></div>
+                <div class="matrix-row"><strong>Track identifiers</strong><span class="pill green">Pass</span></div>
+                <div class="matrix-row"><strong>License assessment</strong><span class="pill amber">Open</span></div>
+                <div class="matrix-row"><strong>Venue proof</strong><span class="pill amber">Open</span></div>
+                <div class="matrix-row"><strong>Claim proportionality</strong><span class="pill green">Pass</span></div>
+              </div>
+
+              <div style="height: 22px"></div>
+              <p class="label">Legal actions</p>
+              <div class="actions">
+                <button class="action primary">Return to Agent <span>recommended</span></button>
+                <button class="action">Draft Notice <span>blocked</span></button>
+                <button class="action">Mark Unsupported <span>not yet</span></button>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const titles = {
+        authority: "Authority Decision Cockpit",
+        agent: "Agent Proof-Gap Workspace",
+        litigation: "Litigation Claim Readiness"
+      };
+
+      document.querySelectorAll(".role-tab").forEach((button) => {
+        button.addEventListener("click", () => {
+          const view = button.dataset.view;
+          document.querySelectorAll(".role-tab").forEach((tab) => tab.classList.remove("active"));
+          document.querySelectorAll(".view").forEach((panel) => panel.classList.remove("active"));
+          button.classList.add("active");
+          document.getElementById(view).classList.add("active");
+          document.getElementById("view-title").textContent = titles[view];
+        });
+      });
+    </script>
+  </body>
+</html>

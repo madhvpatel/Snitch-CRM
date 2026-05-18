@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   DndContext, 
   DragOverlay, 
@@ -59,7 +59,12 @@ import {
   Trophy,
   TrendingUp,
   Target,
-  X
+  RefreshCcw,
+  LockKeyhole,
+  LogOut,
+  X,
+  ChevronDown,
+  Info
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -82,6 +87,7 @@ import L from 'leaflet';
 import 'leaflet.heat';
 import { format } from 'date-fns';
 import { cn } from '@/src/lib/utils';
+import { backfillPrototypeCaseAudioDeconstruction, fetchPrototypeCases, persistPrototypeCaseStage, reevaluatePrototypeCase } from '@/src/lib/prototypeApi';
 import { MOCK_CASES, Case, CaseStage, UserRole, AuditEntry, Comment as CaseComment, EvidenceVault } from './types';
 
 // Custom Heatmap Layer for Leaflet
@@ -120,6 +126,80 @@ let DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 
 type FilterType = 'time' | 'location' | 'offences' | 'fine' | 'label' | 'quality';
+type CrmScreen = 'authority' | 'agent' | 'litigation';
+type ActiveTab = 'cases' | 'map' | 'progress' | 'reports' | 'venue';
+type AuthAccount = {
+  username: string;
+  password: string;
+  screen: CrmScreen;
+  role: UserRole;
+  displayName: string;
+  initials: string;
+};
+
+const AUTH_SESSION_KEY = 'vigil.crm.session';
+
+const screenPath: Record<CrmScreen, string> = {
+  authority: '/authority',
+  agent: '/agent',
+  litigation: '/litigation'
+};
+
+const demoAccounts: AuthAccount[] = [
+  {
+    username: 'authority@vigil.local',
+    password: 'authority123',
+    screen: 'authority',
+    role: 'Admin',
+    displayName: 'Admin User',
+    initials: 'AD'
+  },
+  {
+    username: 'agent@vigil.local',
+    password: 'agent123',
+    screen: 'agent',
+    role: 'Agent',
+    displayName: 'Field Agent',
+    initials: 'FA'
+  },
+  {
+    username: 'litigation@vigil.local',
+    password: 'litigation123',
+    screen: 'litigation',
+    role: 'Lawyer',
+    displayName: 'Legal Counsel',
+    initials: 'LC'
+  }
+];
+
+const getScreenFromPath = (): CrmScreen => {
+  const path = window.location.pathname.toLowerCase();
+  if (path.startsWith('/agent')) return 'agent';
+  if (path.startsWith('/litigation')) return 'litigation';
+  return 'authority';
+};
+
+const getAuthorityTabFromPath = (): ActiveTab => {
+  const path = window.location.pathname.toLowerCase();
+  if (path.startsWith('/authority/venues/')) return 'venue';
+  return 'cases';
+};
+
+const getCaseIdFromAuthorityVenuePath = () => {
+  const match = window.location.pathname.match(/^\/authority\/venues\/([^/]+)/i);
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
+const getRoleForScreen = (screen: CrmScreen): UserRole => {
+  if (screen === 'agent') return 'Agent';
+  if (screen === 'litigation') return 'Lawyer';
+  return 'Admin';
+};
+
+const getStoredAccount = () => {
+  const storedUsername = window.sessionStorage.getItem(AUTH_SESSION_KEY);
+  return demoAccounts.find((account) => account.username === storedUsername) || null;
+};
 
 const VALID_TRANSITIONS: Record<CaseStage, CaseStage[]> = {
   'New': ['Under Review'],
@@ -130,23 +210,198 @@ const VALID_TRANSITIONS: Record<CaseStage, CaseStage[]> = {
   'Closed': ['Under Review']
 };
 
+const getPersonInitial = (name?: string, fallback = 'U') => {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const preferred = parts[1]?.[0] || parts[0]?.[0];
+  return (preferred || fallback).toUpperCase();
+};
+
+const formatStemLabel = (stem?: string | null) => {
+  const raw = String(stem || '').trim();
+  if (!raw) {
+    return 'Unknown Stem';
+  }
+  return raw.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const getStemPriority = (stem?: string | null) => {
+  switch (stem) {
+    case 'music':
+      return 0;
+    case 'other':
+      return 1;
+    case 'vocals':
+      return 2;
+    case 'drums':
+      return 3;
+    case 'bass':
+      return 4;
+    default:
+      return 10;
+  }
+};
+
+const getDeconstructionStatusTone = (status?: string | null) => {
+  switch (status) {
+    case 'completed':
+      return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+    case 'failed':
+      return 'bg-red-500/10 text-red-400 border border-red-500/20';
+    case 'skipped':
+      return 'bg-slate-500/10 text-slate-400 border border-slate-500/20';
+    default:
+      return 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
+  }
+};
+
+const isTrackIdentificationFailed = (caseData: Case) => {
+  const title = String(caseData.songAssessment?.title || '').trim().toLowerCase();
+  const artist = String(caseData.songAssessment?.artists?.join(', ') || '').trim().toLowerCase();
+  return title === 'unknown track' || artist === 'unknown artist';
+};
+
+const isVisualAnalyticsFailed = (caseData: Case, activeVaultIndex: number) => {
+  const notes = String(caseData.evidenceVaults?.[activeVaultIndex]?.notes || '').toLowerCase();
+  return notes.includes('visual ai analysis was unavailable')
+    || notes.includes('peak-aligned frames were extracted, but visual ai analysis was unavailable')
+    || notes.includes('no peak-aligned frames were extracted');
+};
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'cases' | 'map' | 'progress' | 'agent' | 'litigation' | 'reports'>('cases');
+  const [activeScreen, setActiveScreen] = useState<CrmScreen>(() => getScreenFromPath());
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(() => getAuthorityTabFromPath());
+  const [signedInAccount, setSignedInAccount] = useState<AuthAccount | null>(() => getStoredAccount());
   const [allCases, setAllCases] = useState<Case[]>(MOCK_CASES);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(MOCK_CASES[0].id);
+  const [backendCaseIds, setBackendCaseIds] = useState<Set<string>>(() => new Set());
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(() => getCaseIdFromAuthorityVenuePath() || MOCK_CASES[0].id);
   const [sortBy, setSortBy] = useState<FilterType>('time');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [userRole, setUserRole] = useState<UserRole>('Admin');
+  const userRole = signedInAccount?.role || getRoleForScreen(activeScreen);
   const [searchQuery, setSearchQuery] = useState('');
   const [listTab, setListTab] = useState<'upcoming' | 'active' | 'closed'>('active');
   
   const [invalidMoveId, setInvalidMoveId] = useState<string | null>(null);
+  const [audioBackfillCaseIds, setAudioBackfillCaseIds] = useState<Set<string>>(() => new Set());
+  const [reevaluatingCaseIds, setReevaluatingCaseIds] = useState<Set<string>>(() => new Set());
   
   // Advanced Intelligence State
   const [mapMode, setMapMode] = useState<'hotspots' | 'revenue'>('hotspots');
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [vaultToDelete, setVaultToDelete] = useState<{caseId: string, vaultId: string} | null>(null);
   const [routeCaseIds, setRouteCaseIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveScreen(getScreenFromPath());
+      setActiveTabState(getAuthorityTabFromPath());
+      const routeCaseId = getCaseIdFromAuthorityVenuePath();
+      if (routeCaseId) {
+        setSelectedCaseId(routeCaseId);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (!signedInAccount) {
+      if (window.location.pathname !== '/') {
+        window.history.replaceState({}, '', '/');
+      }
+      return;
+    }
+
+    if (activeScreen !== signedInAccount.screen) {
+      window.history.replaceState({}, '', screenPath[signedInAccount.screen]);
+      setActiveScreen(signedInAccount.screen);
+    }
+  }, [activeScreen, signedInAccount]);
+
+  const navigateToScreen = (screen: CrmScreen, tab: ActiveTab = 'cases') => {
+    if (signedInAccount && screen !== signedInAccount.screen) {
+      return;
+    }
+    if (window.location.pathname !== screenPath[screen]) {
+      window.history.pushState({}, '', screenPath[screen]);
+    }
+    setActiveScreen(screen);
+    if (screen === 'authority') {
+      setActiveTabState(tab);
+    }
+  };
+
+  const openAuthorityVenueEvidence = (caseId: string) => {
+    handleSelectCase(caseId);
+    const nextPath = `/authority/venues/${encodeURIComponent(caseId)}`;
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, '', nextPath);
+    }
+    setActiveScreen('authority');
+    setActiveTabState('venue');
+  };
+
+  const setActiveTab = (tab: string) => {
+    if (tab === 'agent') {
+      navigateToScreen('agent');
+      return;
+    }
+    if (tab === 'litigation') {
+      navigateToScreen('litigation');
+      return;
+    }
+    navigateToScreen('authority', tab as ActiveTab);
+  };
+
+  const handleSignIn = (account: AuthAccount) => {
+    window.sessionStorage.setItem(AUTH_SESSION_KEY, account.username);
+    setSignedInAccount(account);
+    window.history.pushState({}, '', screenPath[account.screen]);
+    setActiveScreen(account.screen);
+    setActiveTabState('cases');
+  };
+
+  const handleSignOut = () => {
+    window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+    setSignedInAccount(null);
+    window.history.pushState({}, '', '/');
+    setActiveTabState('cases');
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchPrototypeCases()
+      .then((cases) => {
+        if (cancelled) return;
+        if (!cases.length) {
+          setBackendCaseIds(new Set());
+          console.warn('[Authority Prototype] Backend returned no cases, continuing with local mock state.');
+          return;
+        }
+
+        setBackendCaseIds(new Set(cases.map((item) => item.id)));
+        setAllCases(cases);
+        setSelectedCaseId((currentId) => (
+          cases.some((item) => item.id === currentId)
+            ? currentId
+            : (cases[0]?.id || null)
+        ));
+      })
+      .catch((error) => {
+        setBackendCaseIds(new Set());
+        console.warn('[Authority Prototype] Failed to load backend cases, using local mock state.', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredCases = useMemo(() => {
     let base = allCases;
@@ -187,6 +442,20 @@ export default function App() {
   const updateCaseStage = (id: string, newStage: CaseStage, notes?: string, assignmentType?: 'Agent' | 'Lawyer', agentResolutionNote?: string, resolvedByAgentName?: string, selectedVaultIds?: string[], agentActionTaken?: string) => {
     const agents = ['Agent Smith', 'Agent Johnson', 'Agent Williams', 'Agent Brown'];
     const lawyers = ['Lawyer Davis', 'Lawyer Miller', 'Lawyer Wilson', 'Lawyer Moore'];
+    const currentCase = allCases.find(c => c.id === id);
+    const isValidTransition = Boolean(currentCase && (currentCase.stage === newStage || VALID_TRANSITIONS[currentCase.stage].includes(newStage)));
+    const shouldPersistStage = Boolean(
+      currentCase
+      && currentCase.stage !== newStage
+      && isValidTransition
+      && backendCaseIds.has(id)
+    );
+
+    if (shouldPersistStage) {
+      persistPrototypeCaseStage(id, newStage, userRole, notes).catch((error) => {
+        console.warn(`[Authority Prototype] Failed to persist stage change for ${id}.`, error);
+      });
+    }
     
     setAllCases(prev => prev.map(c => {
       if (c.id === id) {
@@ -332,6 +601,100 @@ export default function App() {
     }, 5000);
   };
 
+  const mergeBackendCase = (updatedCase: Case) => {
+    setAllCases(prev => {
+      const exists = prev.some(item => item.id === updatedCase.id);
+      if (!exists) {
+        return [updatedCase, ...prev];
+      }
+
+      return prev.map(item => item.id === updatedCase.id ? updatedCase : item);
+    });
+
+    setBackendCaseIds(prev => {
+      const next = new Set(prev);
+      next.add(updatedCase.id);
+      return next;
+    });
+    setSelectedCaseId(updatedCase.id);
+  };
+
+  const triggerAudioDeconstructionBackfill = async (caseId: string) => {
+    if (!backendCaseIds.has(caseId)) {
+      addNotification(`Authority backend is unavailable for ${caseId}. Start the backend stack to run Demucs.`, 'major');
+      return;
+    }
+
+    setAudioBackfillCaseIds(prev => {
+      const next = new Set(prev);
+      next.add(caseId);
+      return next;
+    });
+
+    try {
+      const result = await backfillPrototypeCaseAudioDeconstruction(caseId, userRole);
+      if (result.case) {
+        mergeBackendCase(result.case);
+      }
+
+      if (result.ok) {
+        addNotification(`Audio deconstruction refreshed for ${caseId}`, 'major');
+      } else if (result.preservedExisting) {
+        addNotification(`Demucs refresh failed for ${caseId}, but the previous stems were preserved.`, 'major');
+      } else {
+        addNotification(
+          result.error
+            ? `Audio deconstruction failed for ${caseId}: ${result.error}`
+            : `Audio deconstruction failed for ${caseId}`,
+          'major'
+        );
+      }
+    } catch (error) {
+      addNotification(
+        `Audio deconstruction request failed for ${caseId}: ${error instanceof Error ? error.message : String(error)}`,
+        'major'
+      );
+    } finally {
+      setAudioBackfillCaseIds(prev => {
+        const next = new Set(prev);
+        next.delete(caseId);
+        return next;
+      });
+    }
+  };
+
+  const triggerCaseReevaluation = async (caseId: string) => {
+    if (!backendCaseIds.has(caseId)) {
+      addNotification(`Authority backend is unavailable for ${caseId}. Start the backend stack to re-evaluate this package.`, 'major');
+      return;
+    }
+
+    setReevaluatingCaseIds(prev => {
+      const next = new Set(prev);
+      next.add(caseId);
+      return next;
+    });
+
+    try {
+      const result = await reevaluatePrototypeCase(caseId, userRole);
+      if (result.case) {
+        mergeBackendCase(result.case);
+      }
+      addNotification(`Evidence re-evaluation queued for ${caseId}`, 'major');
+    } catch (error) {
+      addNotification(
+        `Re-evaluation request failed for ${caseId}: ${error instanceof Error ? error.message : String(error)}`,
+        'major'
+      );
+    } finally {
+      setReevaluatingCaseIds(prev => {
+        const next = new Set(prev);
+        next.delete(caseId);
+        return next;
+      });
+    }
+  };
+
   const createEvidenceVault = (caseId: string) => {
     setAllCases(prev => prev.map(c => {
       if (c.id === caseId) {
@@ -468,6 +831,10 @@ export default function App() {
     }
   };
 
+  if (!signedInAccount) {
+    return <SignInScreen onSignIn={handleSignIn} />;
+  }
+
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 font-sans">
       {/* Major Notifications Overlay */}
@@ -511,58 +878,56 @@ export default function App() {
           <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
             <Shield className="text-white w-5 h-5" />
           </div>
-          <span className="hidden md:block font-bold text-lg tracking-tight text-white">SonicGuard</span>
+          <span className="hidden md:block font-bold text-lg tracking-tight text-white">Vigil</span>
         </div>
 
         <nav className="flex-1 px-3 space-y-1 mt-4">
           <div className="pb-2 px-3">
-            <p className="hidden md:block text-[10px] font-bold uppercase tracking-widest text-slate-500">Main</p>
+            <p className="hidden md:block text-[10px] font-bold uppercase tracking-widest text-slate-500">Workspace</p>
           </div>
-          <NavItem 
-            active={activeTab === 'cases'} 
-            onClick={() => setActiveTab('cases')} 
-            icon={<Inbox className="w-4 h-4" />} 
-            label="Cases" 
-          />
-          <NavItem 
-            active={activeTab === 'map'} 
-            onClick={() => setActiveTab('map')} 
-            icon={<MapIcon className="w-4 h-4" />} 
-            label="Map Intelligence" 
-          />
-          
-          {userRole === 'Admin' && (
-            <NavItem 
-              active={activeTab === 'progress'} 
-              onClick={() => setActiveTab('progress')} 
-              icon={<Columns className="w-4 h-4" />} 
-              label="Progress" 
-            />
-          )}
+          <div className="mx-1 mb-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white">
+                {activeScreen === 'authority' ? (
+                  <Shield className="h-4 w-4" />
+                ) : activeScreen === 'agent' ? (
+                  <Smartphone className="h-4 w-4" />
+                ) : (
+                  <Gavel className="h-4 w-4" />
+                )}
+              </div>
+              <div className="hidden min-w-0 md:block">
+                <p className="truncate text-xs font-black uppercase tracking-widest text-white">
+                  {activeScreen === 'authority' ? 'Authority' : activeScreen === 'agent' ? 'Agent' : 'Litigation'}
+                </p>
+                <p className="truncate text-[10px] font-medium text-slate-500">{signedInAccount.username}</p>
+              </div>
+            </div>
+          </div>
 
-          {(userRole === 'Admin' || userRole === 'Agent') && (
-            <NavItem 
-              active={activeTab === 'agent'} 
-              onClick={() => setActiveTab('agent')} 
-              icon={<Smartphone className="w-4 h-4" />} 
-              label="Agent Window" 
-            />
-          )}
-
-          {(userRole === 'Admin' || userRole === 'Lawyer') && (
-            <NavItem 
-              active={activeTab === 'litigation'} 
-              onClick={() => setActiveTab('litigation')} 
-              icon={<Gavel className="w-4 h-4" />} 
-              label="Litigation Window" 
-            />
-          )}
-
-          {userRole === 'Admin' && (
+          {activeScreen === 'authority' && (
             <>
               <div className="pt-6 pb-2 px-3">
-                <p className="hidden md:block text-tiny uppercase tracking-widest text-text-quaternary">Management</p>
+                <p className="hidden md:block text-tiny uppercase tracking-widest text-text-quaternary">Authority</p>
               </div>
+              <NavItem 
+                active={activeTab === 'cases'} 
+                onClick={() => setActiveTab('cases')} 
+                icon={<Inbox className="w-4 h-4" />} 
+                label="Cases" 
+              />
+              <NavItem 
+                active={activeTab === 'map'} 
+                onClick={() => setActiveTab('map')} 
+                icon={<MapIcon className="w-4 h-4" />} 
+                label="Map Intelligence" 
+              />
+              <NavItem 
+                active={activeTab === 'progress'} 
+                onClick={() => setActiveTab('progress')} 
+                icon={<Columns className="w-4 h-4" />} 
+                label="Progress" 
+              />
               <NavItem 
                 active={activeTab === 'reports'} 
                 onClick={() => setActiveTab('reports')} 
@@ -574,34 +939,26 @@ export default function App() {
         </nav>
 
         <div className="p-4 border-t border-slate-800 space-y-4">
-          <div className="flex flex-col gap-2 px-2">
-            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Switch Role (Demo)</p>
-            <div className="flex gap-1">
-              {(['Admin', 'Lawyer', 'Agent'] as UserRole[]).map(role => (
-                <button
-                  key={role}
-                  onClick={() => setUserRole(role)}
-                  className={cn(
-                    "flex-1 py-1 text-[8px] font-black rounded border transition-all",
-                    userRole === role ? "bg-blue-600 border-blue-500 text-white" : "bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700"
-                  )}
-                >
-                  {role[0]}
-                </button>
-              ))}
-            </div>
-          </div>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
-              {userRole === 'Admin' ? 'AD' : userRole === 'Lawyer' ? 'LC' : 'FA'}
+              {signedInAccount.initials}
             </div>
             <div className="hidden md:block overflow-hidden">
               <p className="text-xs font-semibold text-white truncate">
-                {userRole === 'Admin' ? 'Admin User' : userRole === 'Lawyer' ? 'Legal Counsel' : 'Field Agent'}
+                {signedInAccount.displayName}
               </p>
               <p className="text-[10px] text-slate-500 truncate">{userRole}</p>
             </div>
           </div>
+          <button
+            type="button"
+            aria-label="Sign out"
+            onClick={handleSignOut}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-red-500/30 hover:text-red-300"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Sign Out</span>
+          </button>
         </div>
       </aside>
 
@@ -609,178 +966,63 @@ export default function App() {
       <main className="flex-1 flex flex-col overflow-hidden relative">
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeTab}
+            key={`${activeScreen}-${activeTab}`}
             initial={{ opacity: 0, scale: 0.99, y: 5 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 1.01, y: -5 }}
             transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            {activeTab === 'cases' ? (
-              <div className="flex flex-1 overflow-hidden">
-                {/* Inbox List */}
-                <div className="w-full md:w-80 lg:w-[400px] border-r border-border-subtle flex flex-col bg-bg-panel">
-                  <div className="p-5 border-b border-border-subtle space-y-4 bg-white/[0.01]">
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <h2 className="text-h3 text-text-primary">
-                          Global Cases
-                        </h2>
-                      </div>
-                      <div className="flex gap-1">
-                        <button 
-                          onClick={() => setIsLiveMode(!isLiveMode)}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-tiny font-black uppercase tracking-widest transition-all",
-                            isLiveMode ? "bg-red-600 text-white animate-pulse" : "bg-white/5 text-text-tertiary hover:bg-white/10"
-                          )}
-                        >
-                          <Zap className={cn("w-3 h-3", isLiveMode ? "fill-current" : "")} />
-                          {isLiveMode ? 'Live' : 'Go Live'}
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {userRole !== 'Agent' && (
-                      <div className="flex gap-1 bg-white/[0.02] p-1 rounded-lg border border-border-standard">
-                        {(['upcoming', 'active', 'closed'] as const).map((tab) => (
-                          <button
-                            key={tab}
-                            onClick={() => setListTab(tab)}
-                            className={cn(
-                              "flex-1 py-1.5 text-tiny font-black uppercase tracking-widest rounded-md transition-all relative z-10",
-                              listTab === tab ? "text-text-primary" : "text-text-quaternary hover:text-text-secondary"
-                            )}
-                          >
-                            {listTab === tab && (
-                              <motion.div 
-                                layoutId="list-tab-bg"
-                                className="absolute inset-0 bg-white/10 rounded-md -z-10 shadow-sm"
-                                transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
-                              />
-                            )}
-                            {tab}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-quaternary" />
-                    <input 
-                      type="text" 
-                      placeholder="Search cases, venues, ISRC..." 
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-transparent border border-border-standard rounded-md text-caption text-text-primary focus:border-accent-violet transition-all outline-none placeholder:text-text-quaternary"
-                    />
-                  </div>
-                    
-                    {/* Filters/Sort Bar */}
-                    <div className="flex flex-wrap gap-1.5">
-                      <FilterButton 
-                        active={sortBy === 'time'} 
-                        onClick={() => toggleSort('time')}
-                        icon={<Clock className="w-3 h-3" />}
-                        label="Time"
-                        order={sortBy === 'time' ? sortOrder : null}
-                      />
-                      <FilterButton 
-                        active={sortBy === 'location'} 
-                        onClick={() => toggleSort('location')}
-                        icon={<MapPin className="w-3 h-3" />}
-                        label="Location"
-                        order={sortBy === 'location' ? sortOrder : null}
-                      />
-                      <FilterButton 
-                        active={sortBy === 'offences'} 
-                        onClick={() => toggleSort('offences')}
-                        icon={<AlertCircle className="w-3 h-3" />}
-                        label="Offences"
-                        order={sortBy === 'offences' ? sortOrder : null}
-                      />
-                      <FilterButton 
-                        active={sortBy === 'fine'} 
-                        onClick={() => toggleSort('fine')}
-                        icon={<IndianRupee className="w-3 h-3" />}
-                        label="Fine"
-                        order={sortBy === 'fine' ? sortOrder : null}
-                      />
-                      <FilterButton 
-                        active={sortBy === 'label'} 
-                        onClick={() => toggleSort('label')}
-                        icon={<Music className="w-3 h-3" />}
-                        label="Label"
-                        order={sortBy === 'label' ? sortOrder : null}
-                      />
-                      <FilterButton 
-                        active={sortBy === 'quality'} 
-                        onClick={() => toggleSort('quality')}
-                        icon={<Star className="w-3 h-3" />}
-                        label="Quality"
-                        order={sortBy === 'quality' ? sortOrder : null}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto">
-                    {sortedCases.map((c) => (
-                      <CaseListItem 
-                        key={c.id} 
-                        caseData={c} 
-                        isSelected={selectedCaseId === c.id}
-                        onClick={() => handleSelectCase(c.id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Case Detail */}
-                <div className="flex-1 overflow-y-auto bg-bg-marketing p-8 lg:p-12">
-                  <AnimatePresence mode="wait">
-                    {selectedCase ? (
-                      <motion.div
-                        key={selectedCase.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                      >
-                        <CaseDetailView 
-                          caseData={selectedCase} 
-                          onUpdateStage={updateCaseStage}
-                          addComment={addComment}
-                          userRole={userRole}
-                          clearNotification={clearNotification}
-                          onCreateVault={createEvidenceVault}
-                          onDeleteVault={(vId) => setVaultToDelete({ caseId: selectedCase.id, vaultId: vId })}
-                          onRequestMoreProof={(vId) => requestMoreProof(selectedCase.id, vId)}
-                          setActiveTab={setActiveTab}
-                          setListTab={setListTab}
-                          onSelectCase={handleSelectCase}
-                          addToRoute={(cId) => {
-                            if (!routeCaseIds.includes(cId)) {
-                              setRouteCaseIds([...routeCaseIds, cId]);
-                            }
-                          }}
-                          removeFromRoute={(cId) => {
-                            setRouteCaseIds(routeCaseIds.filter(id => id !== cId));
-                          }}
-                          isInRoute={routeCaseIds.includes(selectedCase.id)}
-                        />
-                      </motion.div>
-                    ) : (
-                      <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="h-full flex flex-col items-center justify-center text-text-quaternary"
-                      >
-                        <Inbox className="w-16 h-16 mb-4 opacity-10" />
-                        <p className="text-label uppercase tracking-widest opacity-20">No Case Selected</p>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
+            {activeScreen === 'agent' ? (
+              <AgentProofGapWorkspace
+                cases={allCases.filter(c => c.stage === 'Agent Assignment')} 
+                onSelectCase={handleSelectCase}
+                onUpdateStage={updateCaseStage}
+                setActiveTab={setActiveTab}
+                onCreateVault={createEvidenceVault}
+                routeCaseIds={routeCaseIds}
+                setRouteCaseIds={setRouteCaseIds}
+              />
+            ) : activeScreen === 'litigation' ? (
+              <LitigationClaimReadiness
+                allCases={allCases} 
+                onSelectCase={handleSelectCase}
+                onUpdateStage={updateCaseStage}
+                setActiveTab={setActiveTab}
+                onRunSignalAnalysis={triggerCaseReevaluation}
+                onRunDemucs={triggerAudioDeconstructionBackfill}
+                runningSignalAnalysisIds={reevaluatingCaseIds}
+                runningDemucsIds={audioBackfillCaseIds}
+              />
+            ) : activeTab === 'cases' ? (
+              <AuthorityDecisionCockpit
+                cases={allCases}
+                selectedCaseId={selectedCaseId}
+                onSelectCase={handleSelectCase}
+                onOpenVenueEvidence={openAuthorityVenueEvidence}
+                onUpdateStage={updateCaseStage}
+                onRequestMoreProof={(caseId, vaultId) => requestMoreProof(caseId, vaultId)}
+                setActiveTab={setActiveTab}
+                setListTab={setListTab}
+                onRunSignalAnalysis={triggerCaseReevaluation}
+                onRunDemucs={triggerAudioDeconstructionBackfill}
+                runningSignalAnalysisIds={reevaluatingCaseIds}
+                runningDemucsIds={audioBackfillCaseIds}
+              />
+            ) : activeTab === 'venue' ? (
+              <AuthorityVenueEvidencePage
+                cases={allCases}
+                selectedCaseId={selectedCaseId}
+                onSelectCase={handleSelectCase}
+                onUpdateStage={updateCaseStage}
+                onRequestMoreProof={(caseId, vaultId) => requestMoreProof(caseId, vaultId)}
+                setActiveTab={setActiveTab}
+                setListTab={setListTab}
+                onRunSignalAnalysis={triggerCaseReevaluation}
+                onRunDemucs={triggerAudioDeconstructionBackfill}
+                runningSignalAnalysisIds={reevaluatingCaseIds}
+                runningDemucsIds={audioBackfillCaseIds}
+              />
             ) : activeTab === 'map' ? (
               <div className="flex-1 relative">
                 <div className="absolute top-6 left-6 z-[1000] bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl w-80">
@@ -1001,35 +1243,8 @@ export default function App() {
                 onDragEnd={onDragEnd}
                 invalidMoveId={invalidMoveId}
               />
-            ) : activeTab === 'agent' ? (
-              <AgentDashboard 
-                cases={allCases.filter(c => c.stage === 'Agent Assignment')} 
-                onSelectCase={handleSelectCase}
-                onUpdateStage={updateCaseStage}
-                setActiveTab={setActiveTab}
-                addComment={addComment}
-                onCreateVault={createEvidenceVault}
-                routeCaseIds={routeCaseIds}
-                setRouteCaseIds={setRouteCaseIds}
-                removeFromRoute={(cId) => {
-                  setRouteCaseIds(routeCaseIds.filter(id => id !== cId));
-                }}
-              />
             ) : activeTab === 'reports' ? (
               <ReportsDashboard allCases={allCases} />
-            ) : activeTab === 'litigation' ? (
-              <LitigationDashboard 
-                allCases={allCases} 
-                onSelectCase={handleSelectCase}
-                onUpdateStage={updateCaseStage}
-                setActiveTab={setActiveTab}
-                onAddComment={addComment}
-                addNotification={addNotification}
-                userRole={userRole}
-                clearNotification={clearNotification}
-                onDeleteVault={(cId, vId) => setVaultToDelete({ caseId: cId, vaultId: vId })}
-                onRequestMoreProof={(cId, vId) => requestMoreProof(cId, vId)}
-              />
             ) : null}
           </motion.div>
         </AnimatePresence>
@@ -1068,6 +1283,2865 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function SignInScreen({ onSignIn }: { onSignIn: (account: AuthAccount) => void }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const account = demoAccounts.find((item) => (
+      item.username === username.trim().toLowerCase() && item.password === password
+    ));
+
+    if (!account) {
+      setError('Invalid credentials for this CRM workspace.');
+      return;
+    }
+
+    setError('');
+    onSignIn(account);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex items-center justify-center px-6 py-10">
+      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-8 items-stretch">
+        <section className="flex flex-col justify-between rounded-[32px] border border-slate-800 bg-slate-900/50 p-8 lg:p-10 overflow-hidden relative">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-500/60 to-transparent" />
+          <div>
+            <div className="mb-10 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 shadow-lg shadow-blue-600/20">
+                <Shield className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <p className="text-lg font-black tracking-tight text-white">Vigil</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">CRM Access</p>
+              </div>
+            </div>
+            <h1 className="max-w-2xl text-4xl font-black tracking-tight text-white lg:text-5xl">
+              Sign in to open your assigned workspace.
+            </h1>
+            <p className="mt-5 max-w-xl text-sm font-medium leading-7 text-slate-400">
+              Each account is mapped to one CRM surface. Authority, field agent, and litigation access are separated at sign-in.
+            </p>
+          </div>
+
+          <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-3">
+            {demoAccounts.map((account) => (
+              <div key={account.username} className="rounded-2xl border border-white/5 bg-slate-950/50 p-4">
+                <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] text-blue-300">
+                  {account.screen === 'authority' ? (
+                    <Shield className="h-4 w-4" />
+                  ) : account.screen === 'agent' ? (
+                    <Smartphone className="h-4 w-4" />
+                  ) : (
+                    <Gavel className="h-4 w-4" />
+                  )}
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white">{account.screen}</p>
+                <p className="mt-2 break-all text-[11px] font-medium text-slate-400">{account.username}</p>
+                <p className="mt-1 font-mono text-[11px] text-slate-500">{account.password}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-[32px] border border-slate-800 bg-slate-900 p-8 shadow-2xl shadow-black/30">
+          <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 border border-slate-800">
+            <LockKeyhole className="h-5 w-5 text-blue-400" />
+          </div>
+          <h2 className="text-2xl font-black tracking-tight text-white">Sign In</h2>
+          <p className="mt-2 text-sm font-medium text-slate-500">Use the credentials for the workspace you need.</p>
+
+          <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+            <div>
+              <label htmlFor="crm-email" className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                Account
+              </label>
+              <input
+                id="crm-email"
+                type="email"
+                autoComplete="username"
+                value={username}
+                onChange={(event) => {
+                  setUsername(event.target.value);
+                  setError('');
+                }}
+                className="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm font-semibold text-white outline-none transition-colors placeholder:text-slate-700 focus:border-blue-500"
+                placeholder="name@vigil.local"
+              />
+            </div>
+            <div>
+              <label htmlFor="crm-password" className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                Password
+              </label>
+              <input
+                id="crm-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setError('');
+                }}
+                className="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm font-semibold text-white outline-none transition-colors placeholder:text-slate-700 focus:border-blue-500"
+                placeholder="Enter password"
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-bold text-red-300">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white shadow-lg shadow-blue-600/20 transition-colors hover:bg-blue-500"
+            >
+              Continue
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </form>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+const getTrustPassCount = (caseData: Case) => Object.values(caseData.trustGates).filter(Boolean).length;
+
+const getCasePriority = (caseData: Case) => (
+  caseData.qualityScore * 1.25
+  + getTrustPassCount(caseData) * 7
+  + Math.min(caseData.pastOffences * 10, 35)
+  + Math.min(caseData.recoverableValue / 8000, 30)
+);
+
+type PerformanceContextGrade = 'strong' | 'medium' | 'weak' | 'invalid';
+
+const getRightsBodies = (caseData: Case) => {
+  const raw = `${caseData.songAssessment.rightsAssociation || ''} ${caseData.musicLabel || ''}`.toLowerCase();
+  const bodies: Array<'IPRS' | 'PPL' | 'Novex'> = [];
+  if (raw.includes('iprs')) bodies.push('IPRS');
+  if (raw.includes('ppl')) bodies.push('PPL');
+  if (raw.includes('novex')) bodies.push('Novex');
+  return bodies;
+};
+
+const getEvidenceText = (caseData: Case) => [
+  caseData.absoluteProof.performanceContext,
+  caseData.absoluteProof.obstructionFlags,
+  caseData.aiExplanation,
+  ...caseData.evidenceVaults.map((vault) => vault.notes || '')
+].join(' ').toLowerCase();
+
+const getPlaybackSourceProfile = (caseData: Case) => {
+  const evidenceText = getEvidenceText(caseData);
+  const hasRecordedPlayback = [
+    'room playback',
+    'recorded music',
+    'music video',
+    'on-screen content',
+    'large tv',
+    'tv screen',
+    'speaker',
+    'speakers',
+    'pa system',
+    'venue-wide pa',
+    'installed venue-wide pa',
+    'ceiling speaker',
+    'playback'
+  ].some((signal) => evidenceText.includes(signal));
+  const hasLivePerformance = [
+    'visual analysis: performer',
+    'performer visible',
+    'singer visible',
+    'musician visible',
+    'artist performing',
+    'live band',
+    'band performing',
+    'instrument on stage',
+    'microphone on stage',
+    'vocalist on stage',
+    'snitch confirmed live performance',
+    'snitch observed performer',
+    'snitch comment: live performance',
+    'agent observed live performance',
+    'field agent confirmed live performance',
+    'witnessed live performance'
+  ].some((signal) => evidenceText.includes(signal));
+
+  if (hasLivePerformance) {
+    return {
+      sourceType: 'live' as const,
+      label: 'Live performer evidence',
+      evidenceNeed: 'Show the performer, stage, instruments, microphone, or explicit snitch confirmation.'
+    };
+  }
+
+  if (hasRecordedPlayback) {
+    return {
+      sourceType: 'playback' as const,
+      label: 'Recorded music playback',
+      evidenceNeed: 'Show the recording was played through speakers, TV, PA, DJ system, or another venue playback source.'
+    };
+  }
+
+  return {
+    sourceType: 'unknown' as const,
+    label: 'Source not classified',
+    evidenceNeed: 'Classify the source as venue playback, DJ playback, TV/video playback, or live performer evidence.'
+  };
+};
+
+const getViolationMandateProfile = (caseData: Case) => {
+  const bodies = getRightsBodies(caseData);
+  const sourceProfile = getPlaybackSourceProfile(caseData);
+  const isPlayback = sourceProfile.sourceType === 'playback';
+  const hasIPRS = bodies.includes('IPRS');
+  const hasPPL = bodies.includes('PPL');
+  const hasNovex = bodies.includes('Novex');
+
+  if (hasIPRS && hasPPL) {
+    return {
+      bodies,
+      sourceType: sourceProfile.sourceType,
+      label: isPlayback ? 'Composition + sound recording venue playback' : 'Composition + sound recording public venue use',
+      evidenceNeed: isPlayback
+        ? 'Show the song and sound recording were played back in the venue through speakers, TV, PA, DJ system, or similar source.'
+        : 'Show the song composition and the commercial sound recording were used in a public or customer-facing venue setting.'
+    };
+  }
+
+  if (hasPPL) {
+    return {
+      bodies,
+      sourceType: sourceProfile.sourceType,
+      label: isPlayback ? 'Sound recording venue playback / communication' : 'Sound recording public performance / communication',
+      evidenceNeed: 'Show the recorded track was played to the public or customers through venue speakers, DJ systems, screens, or similar playback.'
+    };
+  }
+
+  if (hasNovex) {
+    return {
+      bodies,
+      sourceType: sourceProfile.sourceType,
+      label: 'Assigned repertoire venue-license breach',
+      evidenceNeed: 'Show the captured recording belongs to Novex-controlled repertoire and was used in a licensed-use venue context.'
+    };
+  }
+
+  if (hasIPRS) {
+    return {
+      bodies,
+      sourceType: sourceProfile.sourceType,
+      label: isPlayback ? 'Musical work venue playback' : 'Musical work public venue use',
+      evidenceNeed: isPlayback
+        ? 'Show the underlying musical work was used through recorded playback in a commercial, event, hospitality, or customer-facing setting.'
+        : 'Show the underlying musical or literary work was publicly used in a commercial, event, hospitality, or customer-facing setting.'
+    };
+  }
+
+  return {
+    bodies,
+    sourceType: sourceProfile.sourceType,
+    label: 'Rights-body mandate not mapped',
+    evidenceNeed: 'Map the case to IPRS, PPL, Novex, or another mandate before selecting the violation posture.'
+  };
+};
+
+const getLivePerformanceEvidenceProfile = (caseData: Case) => {
+  const evidenceText = getEvidenceText(caseData);
+
+  const visualSignals = [
+    'visual analysis: performer',
+    'performer visible',
+    'singer visible',
+    'musician visible',
+    'artist performing',
+    'live band',
+    'band performing',
+    'instrument on stage',
+    'microphone on stage',
+    'vocalist on stage'
+  ];
+  const snitchSignals = [
+    'snitch confirmed live performance',
+    'snitch observed performer',
+    'snitch comment: live performance',
+    'agent observed live performance',
+    'field agent confirmed live performance',
+    'witnessed live performance'
+  ];
+  const matchedVisualSignal = visualSignals.find((signal) => evidenceText.includes(signal));
+  const matchedSnitchSignal = snitchSignals.find((signal) => evidenceText.includes(signal));
+
+  if (matchedVisualSignal) {
+    return {
+      hasEvidence: true,
+      source: 'visual analysis',
+      reason: `Live performance is supported by visual evidence: ${matchedVisualSignal}.`
+    };
+  }
+
+  if (matchedSnitchSignal) {
+    return {
+      hasEvidence: true,
+      source: 'snitch comment',
+      reason: `Live performance is supported by an explicit field comment: ${matchedSnitchSignal}.`
+    };
+  }
+
+  return {
+    hasEvidence: false,
+    source: 'not established',
+    reason: 'Live performance is not inferred unless visual analysis shows a performer or the snitch explicitly reports one.'
+  };
+};
+
+const getPerformanceContextProfile = (caseData: Case): {
+  score: number,
+  grade: PerformanceContextGrade,
+  raw: string,
+  reason: string,
+  hasUsableContext: boolean
+} => {
+  const raw = (caseData.absoluteProof.performanceContext || '').trim();
+  const normalized = raw.toLowerCase();
+  const mandateProfile = getViolationMandateProfile(caseData);
+  const livePerformanceEvidence = getLivePerformanceEvidenceProfile(caseData);
+  const hasVideo = Boolean(caseData.videoProofUrl || caseData.absoluteProof.smallVideoUrl || caseData.evidenceVaults.some((vault) => vault.videoUrl));
+  const venueImageCount = caseData.absoluteProof.venueImages.length + caseData.evidenceVaults.reduce((sum, vault) => sum + vault.images.length, 0);
+  const hasStrongPublicSignal = [
+    'peak hour',
+    'full capacity',
+    'friday night',
+    'saturday night',
+    'attendance',
+    'crowd',
+    'public',
+    'commercial',
+    'dance floor',
+    'bar',
+    'club',
+    'restaurant',
+    'lounge',
+    'dj',
+    'pa system'
+  ].some((signal) => normalized.includes(signal)) || livePerformanceEvidence.hasEvidence;
+  const hasMediumSignal = [
+    'venue',
+    'interior',
+    'capture',
+    'music source',
+    'patron',
+    'staff'
+  ].some((signal) => normalized.includes(signal));
+  const hasPrivateOrWeakSignal = [
+    'semi-private',
+    'private',
+    'corporate mixer',
+    'historical record',
+    'unknown',
+    'missing'
+  ].some((signal) => normalized.includes(signal));
+
+  let score = 36;
+  let grade: PerformanceContextGrade = 'invalid';
+  let reason = `No usable context is attached for ${mandateProfile.label}.`;
+  const isOnlyLiveCaptureSignal = normalized.includes('live detection') && !livePerformanceEvidence.hasEvidence;
+
+  if (!raw || normalized === 'historical record') {
+    grade = 'invalid';
+    score = normalized === 'historical record' ? 40 : 34;
+    reason = raw ? `Historical venue history is not proof of this violation. ${mandateProfile.evidenceNeed}` : reason;
+  } else if (isOnlyLiveCaptureSignal) {
+    grade = 'weak';
+    score = 50;
+    reason = `Live detection only confirms the case was captured or monitored live. ${livePerformanceEvidence.reason} ${mandateProfile.evidenceNeed}`;
+  } else if (hasPrivateOrWeakSignal) {
+    grade = 'weak';
+    score = 48;
+    reason = `The context points to private or limited-access use, so ${mandateProfile.label.toLowerCase()} is not established.`;
+  } else if (hasStrongPublicSignal) {
+    grade = 'strong';
+    score = 80;
+    reason = livePerformanceEvidence.hasEvidence
+      ? `${livePerformanceEvidence.reason} The context also supports ${mandateProfile.label.toLowerCase()}.`
+      : `The context supports ${mandateProfile.label.toLowerCase()} with venue, audience, timing, or playback-source details.`;
+  } else if (hasMediumSignal) {
+    grade = 'medium';
+    score = 64;
+    reason = `The context suggests venue use, but needs stronger audience, source, or license-scope detail for ${mandateProfile.label.toLowerCase()}.`;
+  } else {
+    grade = 'weak';
+    score = 54;
+    reason = `The context exists but does not clearly describe the rights-body violation: ${mandateProfile.evidenceNeed}`;
+  }
+
+  if (hasVideo) score += 6;
+  if (venueImageCount >= 2) score += 4;
+  if (caseData.trustGates.geofencingContinuity) score += 4;
+  if (caseData.qualityScore >= 85) score += 3;
+  if (!hasVideo) score -= 8;
+
+  const maxByGrade: Record<PerformanceContextGrade, number> = {
+    strong: 94,
+    medium: 76,
+    weak: 58,
+    invalid: 42
+  };
+  const minByGrade: Record<PerformanceContextGrade, number> = {
+    strong: 78,
+    medium: 60,
+    weak: 42,
+    invalid: 30
+  };
+
+  return {
+    score: Math.round(Math.min(maxByGrade[grade], Math.max(minByGrade[grade], score))),
+    grade,
+    raw,
+    reason,
+    hasUsableContext: grade === 'strong' || grade === 'medium'
+  };
+};
+
+const getDecisionProfile = (caseData: Case) => {
+  const trustPassCount = getTrustPassCount(caseData);
+  const venueConfidence = Math.min(96, Math.max(42, 52 + caseData.pastOffences * 9 + (caseData.trustGates.geofencingContinuity ? 18 : -12)));
+  const publicContext = getPerformanceContextProfile(caseData).score;
+  const rightsReadiness = caseData.songAssessment.isrc && caseData.songAssessment.rightsAssociation ? 86 : 46;
+  const proceduralRisk = Math.max(18, 88 - trustPassCount * 13 - (caseData.chainOfCustody.length * 3));
+
+  if (caseData.qualityScore >= 86 && trustPassCount >= 4 && venueConfidence >= 72 && publicContext >= 60) {
+    return {
+      action: 'Send to Litigation',
+      tone: 'green' as const,
+      reason: 'Track identity, venue context, and integrity signals are strong enough for legal sufficiency review.',
+      blocker: 'Confirm legal posture and selected evidence vaults.'
+    };
+  }
+
+  if (caseData.qualityScore < 45 || trustPassCount <= 2) {
+    return {
+      action: 'Close Candidate',
+      tone: 'red' as const,
+      reason: 'The package has low confidence or material integrity failures that make enforcement unsafe.',
+      blocker: 'Only reopen with a clean capture and stronger venue proof.'
+    };
+  }
+
+  if (caseData.pastOffences > 1 || caseData.recoverableValue > 90000) {
+    return {
+      action: 'Assign to Agent',
+      tone: 'amber' as const,
+      reason: 'The case is commercially meaningful, but field-level proof gaps should be fixed before legal review.',
+      blocker: 'Collect venue signage, source classification, rights-body violation context, and entrance geolocation.'
+    };
+  }
+
+  return {
+    action: 'Keep Monitoring',
+    tone: 'purple' as const,
+    reason: 'The venue remains interesting, but this submission alone is not strong enough for action.',
+    blocker: 'Wait for repeat reports or a stronger capture.'
+  };
+};
+
+const getBlockingQuestions = (caseData: Case) => {
+  const questions: Array<{ title: string, detail: string, status: string, tone: 'green' | 'amber' | 'red' | 'blue' }> = [];
+  const trustPassCount = getTrustPassCount(caseData);
+  const hasVideo = Boolean(caseData.videoProofUrl || caseData.absoluteProof.smallVideoUrl || caseData.evidenceVaults.some((vault) => vault.videoUrl));
+  const venueImageCount = caseData.absoluteProof.venueImages.length + caseData.evidenceVaults.reduce((sum, vault) => sum + vault.images.length, 0);
+  const performanceContextProfile = getPerformanceContextProfile(caseData);
+
+  if (!caseData.trustGates.geofencingContinuity) {
+    questions.push({
+      title: 'Can we trust the venue location?',
+      detail: 'GPS continuity failed or is missing. Ask the agent for entrance geolocation and a clean venue boundary capture.',
+      status: 'Location gap',
+      tone: 'red'
+    });
+  }
+
+  if (!hasVideo) {
+    questions.push({
+      title: 'Where is the context video?',
+      detail: 'The dossier needs video showing the music source, interior setting, and public/commercial context.',
+      status: 'Video missing',
+      tone: 'red'
+    });
+  }
+
+  if (venueImageCount < 2) {
+    questions.push({
+      title: 'Can we visually identify the venue?',
+      detail: 'Venue signage, entrance, bill/receipt, or interior reference images are thin for identity confirmation.',
+      status: 'Identity gap',
+      tone: 'amber'
+    });
+  }
+
+  if (!performanceContextProfile.hasUsableContext) {
+    const mandateProfile = getViolationMandateProfile(caseData);
+    questions.push({
+      title: 'Is the violation context provable?',
+      detail: `${performanceContextProfile.raw || 'No context supplied'}. ${performanceContextProfile.reason} ${mandateProfile.evidenceNeed}`,
+      status: performanceContextProfile.grade === 'invalid' ? 'Context gap' : 'Weak context',
+      tone: performanceContextProfile.grade === 'invalid' ? 'red' : 'amber'
+    });
+  }
+
+  if (caseData.qualityScore < 82) {
+    questions.push({
+      title: 'Is the track match strong enough?',
+      detail: `The forensic score is ${caseData.qualityScore}/100. Review the main audio and separated stems before escalation.`,
+      status: 'Audio review',
+      tone: caseData.qualityScore < 55 ? 'red' : 'amber'
+    });
+  }
+
+  if (!caseData.songAssessment.isrc || !caseData.songAssessment.rightsAssociation) {
+    questions.push({
+      title: 'Can rights be asserted?',
+      detail: 'ISRC or rights association data is incomplete, so legal review should confirm ownership before notice/recovery.',
+      status: 'Rights gap',
+      tone: 'amber'
+    });
+  }
+
+  if (trustPassCount < 4) {
+    questions.push({
+      title: 'Is the packet defensible?',
+      detail: `${trustPassCount}/5 trust gates passed. Review hash, signature, clock skew, geofence, and device trust before action.`,
+      status: 'Custody risk',
+      tone: trustPassCount <= 2 ? 'red' : 'amber'
+    });
+  }
+
+  if (questions.length === 0) {
+    questions.push({
+      title: 'Which evidence vault should carry the action?',
+      detail: 'Signals are strong. Select the vaults that best show track proof, venue identity, public use, and chain of custody.',
+      status: 'Action ready',
+      tone: 'green'
+    });
+  }
+
+  return questions.slice(0, 4);
+};
+
+const scoreMetricHelp: Record<string, string> = {
+  'Track identification': 'Audio fingerprint confidence for the detected song, including match quality and rights identifiers.',
+  'Track proof': 'Strength of the song match from the captured audio and attached forensic signals.',
+  'Venue identity': 'Confidence that the capture belongs to the named venue using location, history, and visual context.',
+  'Venue proof': 'Strength of venue identification from geofence, signage, context media, and repeat history.',
+  'Location integrity': 'GPS continuity and device trust signals showing the capture happened at the venue.',
+  'Violation context': 'Rights-body specific score for whether the evidence supports the alleged IPRS, PPL, Novex, or combined venue-use violation. Speaker, PA, TV, or DJ-system evidence is classified as playback, not live performance.',
+  'Rights readiness': 'Completeness of ISRC, label, and rights-association data for enforcement.',
+  'Procedural risk': 'Higher values indicate more unresolved process, custody, or evidence sufficiency risk.',
+  'Trust health': 'Overall pass rate across media hash, payload, clock, geofence, and device trust checks.',
+  'Forensic': 'Combined forensic confidence for the selected evidence package.',
+  'Rights': 'Readiness of rights-holder metadata for claim preparation.',
+  'Venue liability': 'Strength of venue responsibility signals for recovery or legal action.'
+};
+
+const getScoreMetricReason = (label: string, value: number, tone: 'green' | 'amber' | 'red' | 'blue') => {
+  const rounded = Math.round(value);
+  const band = rounded >= 85 ? 'strong' : rounded >= 70 ? 'usable' : rounded >= 50 ? 'conditional' : 'weak';
+  const prefix = `Reason: ${rounded}% is ${band}`;
+
+  if (label.toLowerCase().includes('risk')) {
+    return `${prefix}; this reflects remaining custody, procedure, or sufficiency exposure. Lower is better for this metric.`;
+  }
+
+  if (label.toLowerCase().includes('track') || label.toLowerCase().includes('forensic')) {
+    return `${prefix}; the score follows match confidence, audio quality, and whether the detected work has usable identifiers.`;
+  }
+
+  if (label.toLowerCase().includes('venue') || label.toLowerCase().includes('location')) {
+    return `${prefix}; the score follows geofence continuity, venue history, visual context, and location trust.`;
+  }
+
+  if (label.toLowerCase().includes('public')) {
+    return `${prefix}; the score follows public/commercial context text, attached video, venue visuals, and location continuity. Private, semi-private, historical, or missing context is capped lower.`;
+  }
+
+  if (label.toLowerCase().includes('violation')) {
+    return `${prefix}; the score follows rights-body mandate, source type, context text, attached video, venue visuals, and location continuity. Speaker or PA evidence is playback; live performance needs visual performer evidence or an explicit snitch comment.`;
+  }
+
+  if (label.toLowerCase().includes('rights')) {
+    return `${prefix}; the score follows completeness of ISRC, label owner, and rights-association metadata.`;
+  }
+
+  if (label.toLowerCase().includes('trust')) {
+    return `${prefix}; the score follows how many device, payload, clock, hash, and geofence checks passed.`;
+  }
+
+  return `${prefix}; the ${tone} status comes from the evidence signals currently attached to this case.`;
+};
+
+function ScoreBar({ label, value, tone = 'green', reasonOverride }: { label: string, value: number, tone?: 'green' | 'amber' | 'red' | 'blue', reasonOverride?: string }) {
+  const colors = {
+    green: 'bg-emerald-500',
+    amber: 'bg-amber-500',
+    red: 'bg-red-500',
+    blue: 'bg-blue-500'
+  };
+  const helpText = scoreMetricHelp[label] || 'Score combines available evidence signals for this review metric.';
+  const reasonText = reasonOverride || getScoreMetricReason(label, value, tone);
+
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+          <span className="truncate">{label}</span>
+          <span className="group relative inline-flex shrink-0">
+            <button
+              type="button"
+              aria-label={`${label} metric explanation`}
+              className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-700 text-slate-500 transition-colors hover:border-blue-500/40 hover:text-blue-300 focus:border-blue-500/50 focus:text-blue-300 focus:outline-none"
+            >
+              <Info className="h-2.5 w-2.5" />
+            </button>
+            <span className="pointer-events-none absolute left-1/2 top-6 z-30 hidden w-72 -translate-x-1/2 rounded-lg border border-slate-700 bg-slate-950 p-3 text-left text-[11px] font-medium normal-case leading-5 tracking-normal text-slate-300 shadow-2xl shadow-black/40 group-hover:block group-focus-within:block">
+              <span className="block">{helpText}</span>
+              <span className="mt-2 block border-t border-slate-800 pt-2 text-slate-400">{reasonText}</span>
+            </span>
+          </span>
+        </span>
+        <span className="text-xs font-black text-white">{Math.round(value)}%</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+        <div className={cn("h-full rounded-full", colors[tone])} style={{ width: `${Math.max(3, Math.min(100, value))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+type SignalEvidenceLayer = {
+  layer: string;
+  status: 'verified' | 'usable' | 'advisory' | 'blocked' | 'pending';
+  kind: string;
+  contribution: string;
+  score: number;
+  affectsForensicScore: boolean;
+  provenance: string;
+  storedAs: string;
+  evidence: string[];
+  icon: React.ReactNode;
+};
+
+type EvidenceAsset = {
+  id: string;
+  label: string;
+  kind: 'video' | 'image' | 'audio' | 'data';
+  url?: string;
+  detail: string;
+};
+
+const signalStatusClasses: Record<SignalEvidenceLayer['status'], string> = {
+  verified: 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100',
+  usable: 'border-sky-400/40 bg-sky-400/10 text-sky-100',
+  advisory: 'border-amber-400/40 bg-amber-400/10 text-amber-100',
+  blocked: 'border-red-400/40 bg-red-400/10 text-red-100',
+  pending: 'border-slate-400/40 bg-slate-400/10 text-slate-100'
+};
+
+const qualityLabel = (score: number) => {
+  if (score >= 85) return 'Strong';
+  if (score >= 70) return 'Usable';
+  if (score >= 50) return 'Review';
+  return 'Blocked';
+};
+
+const formatMeters = (value?: number | null) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 'n/a';
+  return `${Math.round(numeric)} m`;
+};
+
+const humanizeToken = (value?: string | null) => (
+  String(value || 'unknown').replace(/_/g, ' ')
+);
+
+const getVenueAttributionSignal = (caseData: Case): SignalEvidenceLayer => {
+  const attribution = caseData.venueAttribution || null;
+  const locationDelta = caseData.locationDelta || {};
+  const selectedStart = attribution?.selectedVenueDistanceStartMeters ?? locationDelta.selectedVenueDistanceStartMeters ?? null;
+  const selectedEnd = attribution?.selectedVenueDistanceEndMeters ?? locationDelta.selectedVenueDistanceEndMeters ?? null;
+  const selectedDeltas = [selectedStart, selectedEnd]
+    .filter((value) => value !== null && value !== undefined && value !== '')
+    .map(Number)
+    .filter(Number.isFinite);
+  const selectedMin = selectedDeltas.length ? Math.min(...selectedDeltas) : null;
+  const matchedStart = attribution?.matchedVenueDistanceStartMeters ?? locationDelta.matchedVenueDistanceStartMeters ?? null;
+  const matchedEnd = attribution?.matchedVenueDistanceEndMeters ?? locationDelta.matchedVenueDistanceEndMeters ?? null;
+  const backendScore = Number(attribution?.score);
+  const hasBackendScore = Number.isFinite(backendScore);
+  const envelope = attribution?.accuracyEnvelopeMeters ?? locationDelta.accuracyEnvelopeMeters ?? null;
+  const withinEnvelope = attribution?.withinAccuracyEnvelope ?? locationDelta.withinAccuracyEnvelope ?? null;
+  const visualSource = attribution?.visualSource || attribution?.actualSource || null;
+  const statusText = String(attribution?.status || '').toLowerCase();
+  const legalBlock = Boolean(attribution?.legalBlock);
+  const score = hasBackendScore
+    ? Math.round(backendScore)
+    : withinEnvelope === true
+      ? 72
+      : withinEnvelope === false
+        ? 38
+        : 52;
+  const status: SignalEvidenceLayer['status'] = legalBlock
+    ? 'blocked'
+    : statusText.includes('supported')
+      ? 'verified'
+      : statusText.includes('plausible')
+        ? 'usable'
+        : statusText.includes('unresolved') || statusText.includes('adjacent') || statusText.includes('mismatch')
+          ? 'advisory'
+          : score >= 70
+            ? 'usable'
+            : 'pending';
+
+  return {
+    layer: 'Venue attribution',
+    icon: <MapPin className="h-5 w-5" />,
+    status,
+    score,
+    affectsForensicScore: true,
+    kind: 'Coordinate + visual signal',
+    contribution: 'Critical',
+    provenance: attribution?.note
+      || `Selected venue delta ${formatMeters(selectedMin)}; matched venue delta start ${formatMeters(matchedStart)} / end ${formatMeters(matchedEnd)}; accuracy envelope ${formatMeters(envelope)}. AI-assisted visual source: ${visualSource || 'not named'}.`,
+    storedAs: 'venue_attribution + location_delta',
+    evidence: [
+      'selected_venue_delta',
+      'matched_venue_delta',
+      'accuracy_envelope',
+      'visual_context'
+    ]
+  };
+};
+
+const detectSourceContext = (caseData: Case) => {
+  const text = [
+    caseData.absoluteProof.performanceContext,
+    caseData.absoluteProof.obstructionFlags,
+    caseData.aiExplanation,
+    ...caseData.evidenceVaults.map((vault) => vault.notes || '')
+  ].join(' ').toLowerCase();
+  const hasVenuePlayback = /\bpa system\b|\bvenue-wide\b|\bspeaker|\blarge tv\b|\bsound system\b|\bdj booth\b|\broom playback\b|\bmusic video\b|\bplayback\b/.test(text);
+  const hasPersonalPlayback = /\blaptop\b|\bphone\b|\bearbuds?\b|\bheadphones?\b|\bpersonal device\b|\bportable speaker\b/.test(text);
+  const hasLimit = /\binconclusive\b|\bunavailable\b|\bno installed\b|\bnot clearly visible\b|\bmotion blur\b|\blimited view\b|\bobstruction\b/.test(text);
+
+  if (hasVenuePlayback) {
+    return {
+      status: 'usable' as const,
+      score: hasLimit ? 64 : 78,
+      label: 'venue playback',
+      provenance: 'Evidence text points to recorded playback through a venue speaker, PA, TV, DJ, or room playback source.'
+    };
+  }
+
+  if (hasPersonalPlayback) {
+    return {
+      status: 'advisory' as const,
+      score: 46,
+      label: 'personal or small-device playback',
+      provenance: 'Evidence text points to laptop, phone, earbuds, portable speaker, or another small-device source. This needs source confirmation.'
+    };
+  }
+
+  return {
+    status: hasLimit ? 'pending' as const : 'advisory' as const,
+    score: hasLimit ? 38 : 52,
+    label: 'source inconclusive',
+    provenance: 'The package does not clearly classify whether audio came from venue playback, a personal device, or a live performer.'
+  };
+};
+
+const getCaseEvidenceAssets = (caseData: Case): EvidenceAsset[] => {
+  const assets: EvidenceAsset[] = [];
+  const seen = new Set<string>();
+  const addAsset = (asset: EvidenceAsset) => {
+    const key = `${asset.kind}:${asset.url || asset.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    assets.push(asset);
+  };
+
+  if (caseData.videoProofUrl) {
+    addAsset({ id: `${caseData.id}:raw-video`, label: 'Raw video', kind: 'video', url: caseData.videoProofUrl, detail: 'Captured media asset' });
+  }
+  if (caseData.absoluteProof.smallVideoUrl) {
+    addAsset({ id: `${caseData.id}:review-video`, label: 'Review video', kind: 'video', url: caseData.absoluteProof.smallVideoUrl, detail: 'Authority review media' });
+  }
+  caseData.absoluteProof.venueImages.forEach((url, index) => {
+    addAsset({ id: `${caseData.id}:frame:${index}`, label: `Peak frame ${index + 1}`, kind: 'image', url, detail: 'Visual enrichment frame' });
+  });
+  caseData.evidenceVaults.forEach((vault) => {
+    if (vault.videoUrl) {
+      addAsset({ id: `${vault.id}:video`, label: `${vault.name} video`, kind: 'video', url: vault.videoUrl, detail: format(vault.timestamp, 'MMM d, HH:mm') });
+    }
+    vault.images.forEach((url, index) => {
+      addAsset({ id: `${vault.id}:image:${index}`, label: `${vault.name} image ${index + 1}`, kind: 'image', url, detail: 'Vault image asset' });
+    });
+  });
+  (caseData.audioDeconstruction?.artifacts || []).forEach((artifact) => {
+    addAsset({
+      id: artifact.assetId,
+      label: `${formatStemLabel(artifact.stem)} stem`,
+      kind: 'audio',
+      url: artifact.url,
+      detail: `${artifact.mimeType || 'audio'}${artifact.sizeBytes ? ` - ${(artifact.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ''}`
+    });
+  });
+
+  return assets;
+};
+
+const buildSignalEvidenceLayers = (caseData: Case): SignalEvidenceLayer[] => {
+  const trustPassCount = getTrustPassCount(caseData);
+  const sourceContext = detectSourceContext(caseData);
+  const assets = getCaseEvidenceAssets(caseData);
+  const imageCount = assets.filter((asset) => asset.kind === 'image').length;
+  const videoCount = assets.filter((asset) => asset.kind === 'video').length;
+  const hasTrack = Boolean(caseData.songAssessment.title && caseData.songAssessment.title !== 'Unknown Track');
+  const hasIsrc = Boolean(caseData.songAssessment.isrc && caseData.songAssessment.isrc !== 'Unavailable');
+  const demucsComplete = caseData.audioDeconstruction?.status === 'completed';
+  const rightsKnown = Boolean(caseData.songAssessment.rightsAssociation && caseData.songAssessment.rightsAssociation !== 'Rights Context Pending');
+
+  return [
+    {
+      layer: 'Media integrity',
+      icon: <ShieldCheck className="h-5 w-5" />,
+      status: caseData.trustGates.mediaHashKey && caseData.trustGates.payloadSignature ? 'verified' : videoCount ? 'usable' : 'blocked',
+      score: Math.min(100, 18 + (videoCount ? 24 : 0) + (caseData.trustGates.mediaHashKey ? 24 : 0) + (caseData.trustGates.payloadSignature ? 24 : 0) + (caseData.trustGates.clockSkewDetection ? 10 : 0)),
+      affectsForensicScore: true,
+      kind: 'Hard fact',
+      contribution: 'Critical',
+      provenance: `${videoCount} video asset(s). Media hash ${caseData.trustGates.mediaHashKey ? 'present' : 'missing'}; payload signature ${caseData.trustGates.payloadSignature ? 'verified' : 'not verified'}; clock skew ${caseData.trustGates.clockSkewDetection ? 'passed' : 'open'}.`,
+      storedAs: 'assets + media_integrity_checks',
+      evidence: ['raw_video_asset', 'media_hash_gate', 'payload_signature', 'clock_skew_gate']
+    },
+    {
+      layer: 'Device presence proof',
+      icon: <MapPin className="h-5 w-5" />,
+      status: caseData.trustGates.geofencingContinuity ? 'verified' : 'advisory',
+      score: caseData.trustGates.geofencingContinuity ? 82 : 42,
+      affectsForensicScore: true,
+      kind: 'Captured fact',
+      contribution: 'Critical',
+      provenance: `Capture coordinate is tied to ${caseData.location.name}, ${caseData.location.city}. This proves device presence near the venue, not source venue by itself.`,
+      storedAs: 'gps_points + venue_matches',
+      evidence: ['venue_coordinate', 'geofence_gate', 'device_trust_band']
+    },
+    getVenueAttributionSignal(caseData),
+    {
+      layer: 'Audio identity',
+      icon: <Fingerprint className="h-5 w-5" />,
+      status: hasTrack ? 'verified' : 'blocked',
+      score: Math.min(100, 24 + (hasTrack ? 35 : 0) + (hasIsrc ? 16 : 0) + (demucsComplete ? 12 : 0) + Math.round(caseData.qualityScore * 0.13)),
+      affectsForensicScore: true,
+      kind: 'External fact',
+      contribution: 'Critical',
+      provenance: hasTrack ? `${caseData.songAssessment.title} by ${caseData.songAssessment.artists.join(', ')} is attached. ${demucsComplete ? 'Demucs stems are available.' : 'Stem deconstruction is absent or incomplete.'}` : 'No resolved song identity is attached.',
+      storedAs: 'audio_identifications',
+      evidence: ['derived_audio', 'fingerprint_attempts', 'song_identity', 'stem_artifacts']
+    },
+    {
+      layer: 'Source context',
+      icon: <Activity className="h-5 w-5" />,
+      status: sourceContext.status,
+      score: sourceContext.score,
+      affectsForensicScore: true,
+      kind: 'Advisory heuristic',
+      contribution: 'Corroborating',
+      provenance: `${sourceContext.label}: ${sourceContext.provenance} This is not standalone legal proof.`,
+      storedAs: 'source_assessments',
+      evidence: ['source_class', 'venue_playback_cues', 'visual_enrichment', 'analyst_note']
+    },
+    {
+      layer: 'Visual enrichment',
+      icon: <Video className="h-5 w-5" />,
+      status: imageCount ? 'advisory' : 'pending',
+      score: imageCount ? Math.min(86, 40 + imageCount * 10) : 20,
+      affectsForensicScore: true,
+      kind: 'Enrichment factor',
+      contribution: 'Modifier',
+      provenance: imageCount ? `${imageCount} frame/image asset(s) enrich venue identity and source context. Visual output remains advisory and must not be treated as standalone proof.` : 'No visual frame assets are attached.',
+      storedAs: 'visual_assessments',
+      evidence: ['key_frames', 'venue_identity_cues', 'playback_equipment_cues', 'obstruction_flags']
+    },
+    {
+      layer: 'Business and rights gate',
+      icon: <Gavel className="h-5 w-5" />,
+      status: rightsKnown ? 'usable' : 'blocked',
+      score: Math.min(100, 20 + (rightsKnown ? 32 : 0) + (hasIsrc ? 18 : 0) + (caseData.recoverableValue > 0 ? 12 : 0) + (trustPassCount >= 4 ? 12 : 0)),
+      affectsForensicScore: false,
+      kind: 'Partner data required',
+      contribution: 'Business gate',
+      provenance: rightsKnown ? `Rights context is ${caseData.songAssessment.rightsAssociation}. License status still requires IPRS/PPL/Novex partnership data or verified license artifacts.` : 'Rights context is pending, so enforcement posture is blocked until ownership/licensing data is mapped.',
+      storedAs: 'merchant_master + license_status',
+      evidence: ['rights_association', 'merchant_record', 'tariff_match', 'license_status']
+    }
+  ];
+};
+
+function StatusPill({ status }: { status: SignalEvidenceLayer['status'] }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-widest", signalStatusClasses[status])}>
+      {status === 'verified' || status === 'usable' ? <CheckCircle2 className="h-3 w-3" /> : status === 'blocked' ? <X className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+      {status}
+    </span>
+  );
+}
+
+function EvidenceAssetRail({ caseData }: { caseData: Case }) {
+  const assets = getCaseEvidenceAssets(caseData);
+
+  if (!assets.length) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-800 bg-slate-950/50 p-4 text-sm font-medium text-slate-500">
+        No assets are attached to this evidence package.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {assets.map((asset) => (
+        <div key={asset.id} className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-3 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-black text-white">{asset.label}</p>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-600">{asset.kind} - {asset.detail}</p>
+            </div>
+            {asset.url && (
+              <a href={asset.url} target="_blank" rel="noreferrer" className="shrink-0 text-slate-500 hover:text-blue-300" title={`Open ${asset.label}`}>
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            )}
+          </div>
+          {asset.kind === 'image' && asset.url ? (
+            <img src={asset.url} alt={asset.label} className="aspect-video w-full object-cover" />
+          ) : asset.kind === 'video' && asset.url ? (
+            <video src={asset.url} controls preload="metadata" className="aspect-video w-full bg-black object-contain" />
+          ) : asset.kind === 'audio' && asset.url ? (
+            <div className="p-3">
+              <audio controls preload="none" className="w-full">
+                <source src={asset.url} />
+              </audio>
+            </div>
+          ) : (
+            <div className="flex aspect-video items-center justify-center text-xs font-bold uppercase tracking-widest text-slate-600">
+              Data asset
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DemucsEvaluationPanel({ caseData }: { caseData: Case }) {
+  const deconstruction = caseData.audioDeconstruction;
+  const artifacts = [...(deconstruction?.artifacts || [])].sort((left, right) => getStemPriority(left.stem) - getStemPriority(right.stem));
+
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Demucs evaluation</p>
+          <h4 className="mt-2 text-lg font-black text-white">{deconstruction?.status === 'completed' ? 'Stem isolation attached' : 'Stem isolation pending'}</h4>
+          <p className="mt-2 max-w-3xl text-xs font-medium leading-5 text-slate-400">
+            {deconstruction?.summary || 'No Demucs summary is attached to this case yet.'}
+          </p>
+        </div>
+        <StatusPill status={deconstruction?.status === 'completed' ? 'verified' : deconstruction?.status === 'failed' ? 'blocked' : 'pending'} />
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        {[
+          ['Provider', deconstruction?.provider || 'n/a'],
+          ['Model', deconstruction?.model || 'n/a'],
+          ['Preferred stem', formatStemLabel(deconstruction?.preferredStem)],
+          ['Artifacts', artifacts.length]
+        ].map(([label, value]) => (
+          <div key={String(label)} className="rounded-md border border-slate-800 bg-slate-900/70 p-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">{label}</p>
+            <p className="mt-1 truncate text-sm font-black text-white">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {artifacts.length > 0 && (
+        <div className="mt-4 grid gap-2 md:grid-cols-2">
+          {artifacts.map((artifact) => (
+            <div key={artifact.assetId} className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-white">{formatStemLabel(artifact.stem)}</p>
+                  <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-600">{artifact.mimeType || 'audio'}{artifact.sizeBytes ? ` - ${(artifact.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ''}</p>
+                </div>
+                <a href={artifact.url} target="_blank" rel="noreferrer" className="text-slate-500 hover:text-blue-300" title={`Open ${formatStemLabel(artifact.stem)}`}>
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </div>
+              <audio controls preload="none" className="w-full">
+                <source src={artifact.url} type={artifact.mimeType || 'audio/wav'} />
+              </audio>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ForensicScoreFormula({ layers, score }: { layers: SignalEvidenceLayer[], score: number }) {
+  const scoredLayers = layers.filter((layer) => layer.affectsForensicScore);
+  const excludedLayers = layers.filter((layer) => !layer.affectsForensicScore);
+  const total = scoredLayers.reduce((sum, layer) => sum + layer.score, 0);
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Forensic score formula</p>
+          <p className="mt-2 text-sm font-medium leading-6 text-slate-300">
+            Average of scored evidence layers only. Business and rights gates stay visible, but do not affect this score.
+          </p>
+        </div>
+        <div className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-right">
+          <p className="text-[9px] font-black uppercase tracking-widest text-blue-300">Result</p>
+          <p className="text-xl font-black text-white">{score}</p>
+        </div>
+      </div>
+      <div className="mt-4 overflow-hidden rounded-md border border-slate-800">
+        {scoredLayers.map((layer) => (
+          <div key={layer.layer} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-800 px-3 py-2 last:border-b-0">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-black text-white">{layer.layer}</p>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-600">{layer.kind}</p>
+            </div>
+            <p className="font-mono text-sm font-black text-slate-200">{layer.score}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 font-mono text-[11px] font-bold text-slate-400">
+        ({scoredLayers.map((layer) => layer.score).join(' + ')}) / {scoredLayers.length} = {total} / {scoredLayers.length} = {score}
+      </p>
+      {excludedLayers.length > 0 && (
+        <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-purple-300">
+          Excluded from forensic score: {excludedLayers.map((layer) => layer.layer).join(', ')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SignalEvidencePanel({ caseData, compact = false }: { caseData: Case, compact?: boolean }) {
+  const layers = buildSignalEvidenceLayers(caseData);
+  const forensicLayers = layers.filter((layer) => layer.affectsForensicScore);
+  const readiness = Math.round(forensicLayers.reduce((sum, layer) => sum + layer.score, 0) / Math.max(1, forensicLayers.length));
+  const visibleLayers = compact ? layers.slice(0, 4) : layers;
+
+  return (
+    <section className={cn("rounded-lg border border-slate-800 bg-slate-950/70", compact ? "p-3" : "p-5")}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400">Signal evidence</p>
+          <h3 className={cn("mt-2 font-black tracking-tight text-white", compact ? "text-base" : "text-2xl")}>Facts, assets, advisory signals</h3>
+          <p className="mt-2 max-w-4xl text-xs font-medium leading-5 text-slate-400">
+            Evidence is split into signed facts, extracted assets, advisory source/visual signals, Demucs output, and rights gates. Rights are shown as a business gate and excluded from the forensic score.
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-3 text-right">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">Forensic score</p>
+          <p className="mt-1 text-2xl font-black text-white">{readiness}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{qualityLabel(readiness)}</p>
+        </div>
+      </div>
+
+      <div className={cn("mt-4 grid gap-3", compact ? "grid-cols-1" : "xl:grid-cols-2")}>
+        {visibleLayers.map((layer) => (
+          <div key={layer.layer} className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-800 bg-slate-950 text-slate-300">
+                {layer.icon}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-black text-white">{layer.layer}</p>
+                  <StatusPill status={layer.status} />
+                  <span className="rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{layer.kind}</span>
+                  {!layer.affectsForensicScore && (
+                    <span className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-purple-200">not scored</span>
+                  )}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-400">{layer.provenance}</p>
+                {!compact && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {layer.evidence.map((item) => (
+                      <span key={item} className="rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 font-mono text-[10px] text-slate-400">{item}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="w-14 text-right">
+                <p className="text-lg font-black text-white">{layer.score}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">{layer.contribution}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!compact && (
+        <div className="mt-4 space-y-4">
+          <ForensicScoreFormula layers={layers} score={readiness} />
+          <DemucsEvaluationPanel caseData={caseData} />
+          <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+            <p className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Attached assets</p>
+            <EvidenceAssetRail caseData={caseData} />
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const getWaveSeed = (input: string) => (
+  input.split('').reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 3), 0)
+);
+
+const getWavePath = (seedInput: string, amplitude = 1, peakStart = 58, peakWidth = 18) => {
+  const seed = getWaveSeed(seedInput);
+  const points = 72;
+  return Array.from({ length: points }).map((_, index) => {
+    const x = (index / (points - 1)) * 100;
+    const inPeak = x >= peakStart && x <= peakStart + peakWidth;
+    const peakLift = inPeak ? 1.65 : 0.55;
+    const primary = Math.sin((index + seed) * 0.42) * 7.5 * amplitude * peakLift;
+    const secondary = Math.sin((index * 0.17) + (seed % 11)) * 4.5 * amplitude * peakLift;
+    const transient = Math.sin((index * 1.13) + (seed % 7)) * 2.5 * amplitude * peakLift;
+    const y = Math.min(33, Math.max(3, 18 + primary + secondary + transient));
+    return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+  }).join(' ');
+};
+
+function WaveformLane({
+  label,
+  detail,
+  path,
+  color,
+  muted = false,
+  peakStart = 58,
+  peakWidth = 18,
+  progressPercent = 0
+}: {
+  label: string,
+  detail: string,
+  path: string,
+  color: string,
+  muted?: boolean,
+  peakStart?: number,
+  peakWidth?: number,
+  progressPercent?: number
+}) {
+  const safeLabel = label.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const clipId = `peak-${safeLabel}-${Math.round(peakStart)}-${Math.round(peakWidth)}`;
+  const progressClipId = `progress-${safeLabel}-${Math.round(peakStart)}-${Math.round(peakWidth)}`;
+  const progressX = Math.max(0, Math.min(100, progressPercent));
+
+  return (
+    <div className={cn(
+      "grid min-w-0 grid-cols-[104px_minmax(0,1fr)] gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 max-md:grid-cols-1",
+      muted && "opacity-60"
+    )}>
+      <div className="min-w-0">
+        <p className="truncate text-[11px] font-black uppercase tracking-widest text-white">{label}</p>
+        <p className="mt-1 truncate text-[9px] font-bold uppercase tracking-widest text-slate-500">{detail}</p>
+      </div>
+      <div className="relative min-w-0 overflow-hidden rounded-md border border-slate-800 bg-black/40 px-3 py-2">
+        <svg viewBox="0 0 100 36" preserveAspectRatio="none" className="h-10 w-full">
+          <defs>
+            <clipPath id={clipId}>
+              <rect x={peakStart} y="0" width={peakWidth} height="36" />
+            </clipPath>
+            <clipPath id={progressClipId}>
+              <rect x="0" y="0" width={progressX} height="36" />
+            </clipPath>
+          </defs>
+          <line x1="0" y1="18" x2="100" y2="18" stroke="rgba(148, 163, 184, 0.18)" strokeWidth="0.4" />
+          {[20, 40, 60, 80].map((tick) => (
+            <line key={tick} x1={tick} y1="3" x2={tick} y2="33" stroke="rgba(148, 163, 184, 0.10)" strokeWidth="0.35" />
+          ))}
+          <rect x={peakStart} y="2" width={peakWidth} height="32" fill={color} opacity="0.07" rx="2" />
+          <path d={path} fill="none" stroke="rgba(148, 163, 184, 0.32)" strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
+          <path d={`${path} L 100 36 L 0 36 Z`} fill="rgba(148, 163, 184, 0.12)" />
+          <path d={path} fill="none" stroke="rgba(226, 232, 240, 0.48)" strokeWidth="1.7" vectorEffect="non-scaling-stroke" clipPath={`url(#${progressClipId})`} />
+          <path d={path} fill="none" stroke={color} strokeWidth="2.2" vectorEffect="non-scaling-stroke" clipPath={`url(#${clipId})`} />
+          <path d={`${path} L 100 36 L 0 36 Z`} fill={color} opacity="0.18" clipPath={`url(#${clipId})`} />
+          <line x1={progressX} y1="2" x2={progressX} y2="34" stroke="white" strokeWidth="0.9" opacity={progressX > 0 ? 0.85 : 0} vectorEffect="non-scaling-stroke" />
+        </svg>
+        <div className="mt-1 flex justify-between text-[9px] font-bold text-slate-600">
+          <span>0s</span>
+          <span>10s</span>
+          <span>20s</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EvidenceMediaDossier({ caseData }: { caseData: Case }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const isolatedAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioMode, setAudioMode] = useState<'raw' | 'isolated'>('raw');
+  const [playbackProgress, setPlaybackProgress] = useState(0);
+  const primaryVault = caseData.evidenceVaults.find((vault) => vault.videoUrl) || caseData.evidenceVaults[0];
+  const videoUrl = primaryVault?.videoUrl || caseData.videoProofUrl || caseData.absoluteProof.smallVideoUrl;
+  const artifacts = [...(caseData.audioDeconstruction?.artifacts || [])].sort((left, right) => (
+    getStemPriority(left.stem) - getStemPriority(right.stem)
+  ));
+  const isolatedMusic = artifacts.find((artifact) => artifact.stem === 'music')
+    || artifacts.find((artifact) => artifact.stem === caseData.audioDeconstruction?.preferredStem)
+    || artifacts.find((artifact) => artifact.stem === caseData.audioDeconstruction?.fingerprintStem)
+    || null;
+  const peakStart = 58 + (getWaveSeed(caseData.id) % 8);
+  const peakWidth = 16;
+
+  useEffect(() => {
+    setPlaybackProgress(0);
+  }, [caseData.id, videoUrl]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (audioMode === 'isolated') {
+      video.muted = true;
+      return;
+    }
+
+    video.muted = false;
+    isolatedAudioRef.current?.pause();
+  }, [audioMode, videoUrl]);
+
+  const syncIsolatedAudio = () => {
+    if (!videoRef.current || !isolatedAudioRef.current) return;
+    isolatedAudioRef.current.currentTime = Math.min(
+      videoRef.current.currentTime,
+      Number.isFinite(isolatedAudioRef.current.duration) ? Math.max(0, isolatedAudioRef.current.duration - 0.1) : videoRef.current.currentTime
+    );
+  };
+
+  const handleVideoPlay = () => {
+    if (audioMode !== 'isolated' || !isolatedAudioRef.current) return;
+    syncIsolatedAudio();
+    isolatedAudioRef.current.play().catch(() => undefined);
+  };
+
+  const handleVideoPause = () => {
+    isolatedAudioRef.current?.pause();
+  };
+
+  const handleSeek = () => {
+    if (audioMode === 'isolated') syncIsolatedAudio();
+    const video = videoRef.current;
+    if (video && Number.isFinite(video.duration) && video.duration > 0) {
+      setPlaybackProgress((video.currentTime / video.duration) * 100);
+    }
+  };
+
+  const switchAudioMode = (mode: 'raw' | 'isolated') => {
+    setAudioMode(mode);
+    if (mode === 'isolated') {
+      if (videoRef.current) {
+        videoRef.current.muted = true;
+      }
+      syncIsolatedAudio();
+      if (videoRef.current && !videoRef.current.paused) {
+        isolatedAudioRef.current?.play().catch(() => undefined);
+      }
+    } else {
+      if (videoRef.current) {
+        videoRef.current.muted = false;
+      }
+      isolatedAudioRef.current?.pause();
+    }
+  };
+
+  return (
+    <section className="mt-5 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Evidence media dossier</p>
+          <h4 className="mt-2 text-lg font-black text-white">Video and audio timeline</h4>
+        </div>
+        <span className={cn(
+          "rounded-full border px-3 py-1.5 text-[9px] font-black uppercase tracking-widest",
+          caseData.audioDeconstruction?.status === 'completed'
+            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+            : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+        )}>
+          {caseData.audioDeconstruction?.status === 'completed' ? 'Stems attached' : 'Stems pending'}
+        </span>
+      </div>
+
+      <div className="min-w-0 space-y-4">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-black">
+          {videoUrl ? (
+            <div className="aspect-video max-h-[360px] w-full bg-black">
+              <video
+                ref={videoRef}
+                src={videoUrl}
+                controls
+                preload="metadata"
+                muted={audioMode === 'isolated'}
+                onPlay={handleVideoPlay}
+                onPause={handleVideoPause}
+                onSeeked={handleSeek}
+                onVolumeChange={() => {
+                  if (audioMode === 'isolated' && videoRef.current && !videoRef.current.muted) {
+                    switchAudioMode('raw');
+                  }
+                }}
+                onTimeUpdate={() => {
+                  if (videoRef.current && Number.isFinite(videoRef.current.duration) && videoRef.current.duration > 0) {
+                    setPlaybackProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+                  }
+                  if (audioMode === 'isolated' && videoRef.current && isolatedAudioRef.current) {
+                    const drift = Math.abs(videoRef.current.currentTime - isolatedAudioRef.current.currentTime);
+                    if (drift > 0.35) syncIsolatedAudio();
+                  }
+                }}
+                onEnded={() => {
+                  setPlaybackProgress(100);
+                  isolatedAudioRef.current?.pause();
+                }}
+                className="h-full w-full bg-black object-contain"
+              />
+            </div>
+          ) : (
+            <div className="flex aspect-video items-center justify-center bg-slate-950 text-xs font-bold uppercase tracking-widest text-slate-600">
+              No video attached
+            </div>
+          )}
+          <div className="border-t border-slate-800 bg-slate-950 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-white">{primaryVault?.name || 'Primary capture'}</p>
+                <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                  {primaryVault?.timestamp ? format(primaryVault.timestamp, 'MMM d, HH:mm') : format(caseData.timestamp, 'MMM d, HH:mm')} capture
+                </p>
+              </div>
+              <div className="flex rounded-lg border border-slate-800 bg-slate-900 p-1">
+                <button
+                  type="button"
+                  onClick={() => switchAudioMode('raw')}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-[9px] font-black uppercase tracking-widest transition-colors",
+                    audioMode === 'raw' ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-200"
+                  )}
+                >
+                  Raw audio
+                </button>
+                <button
+                  type="button"
+                  onClick={() => isolatedMusic && switchAudioMode('isolated')}
+                  disabled={!isolatedMusic}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-[9px] font-black uppercase tracking-widest transition-colors",
+                    audioMode === 'isolated' ? "bg-emerald-600 text-white" : "text-slate-500 hover:text-slate-200",
+                    !isolatedMusic && "cursor-not-allowed opacity-40 hover:text-slate-500"
+                  )}
+                >
+                  Isolated music
+                </button>
+              </div>
+            </div>
+            {isolatedMusic && (
+              <audio ref={isolatedAudioRef} preload="metadata" src={isolatedMusic.url} />
+            )}
+          </div>
+        </div>
+
+        <div className="min-w-0 space-y-3 overflow-hidden rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+          <WaveformLane
+            label="Raw audio amplitude"
+            detail="Original scene audio"
+            path={getWavePath(`${caseData.id}:raw`, 1, peakStart, peakWidth)}
+            color="#60a5fa"
+            peakStart={peakStart}
+            peakWidth={peakWidth}
+            progressPercent={playbackProgress}
+          />
+          <WaveformLane
+            label="Isolated music amplitude"
+            detail={isolatedMusic ? `${formatStemLabel(isolatedMusic.stem)} stem` : 'Music isolation pending'}
+            path={getWavePath(`${caseData.id}:isolated-music`, 0.96, peakStart, peakWidth)}
+            color="#34d399"
+            muted={!isolatedMusic}
+            peakStart={peakStart}
+            peakWidth={peakWidth}
+            progressPercent={playbackProgress}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              Peak region marks the strongest detected song segment in the scene.
+            </p>
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-300">
+              Peak {Math.round(peakStart)}%-{Math.round(peakStart + peakWidth)}%
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AuthorityStyleEvidencePackage({
+  caseData,
+  vault,
+  onRequestMoreProof
+}: {
+  caseData: Case,
+  vault: EvidenceVault,
+  onRequestMoreProof: (caseId: string, vaultId: string) => void
+}) {
+  const scopedCaseData: Case = {
+    ...caseData,
+    evidenceVaults: [
+      vault,
+      ...caseData.evidenceVaults.filter((candidate) => candidate.id !== vault.id)
+    ]
+  };
+  const trustPassCount = getTrustPassCount(caseData);
+
+  return (
+    <div className="space-y-5 p-5">
+      <EvidenceMediaDossier caseData={scopedCaseData} />
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Evidence facts</p>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between gap-4"><span className="text-slate-500">Track</span><span className="text-right font-bold text-white">{caseData.songAssessment.title}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-slate-500">Artists</span><span className="text-right font-bold text-white">{caseData.songAssessment.artists.join(', ')}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-slate-500">ISRC</span><span className="text-right font-mono text-xs font-bold text-blue-300">{caseData.songAssessment.isrc || 'Missing'}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-slate-500">Rights</span><span className="text-right font-bold text-emerald-300">{caseData.songAssessment.rightsAssociation || 'Missing'}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-slate-500">Trust gates</span><span className="text-right font-bold text-white">{trustPassCount}/5 passed</span></div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Reviewer interpretation</p>
+          <p className="text-sm font-medium leading-6 text-slate-300">{vault.notes || caseData.aiExplanation || 'No reviewer interpretation is attached to this evidence package.'}</p>
+          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Violation context note</p>
+            <p className="mt-1 text-sm text-slate-300">{caseData.absoluteProof.performanceContext}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Evidence vault</p>
+            <p className="text-sm font-black text-white">{vault.name}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">{vault.notes || 'No vault notes provided.'}</p>
+            <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-slate-600">{vault.images.length} images · {vault.videoUrl ? 'video attached' : 'fallback video used'}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onRequestMoreProof(caseData.id, vault.id)}
+            disabled={vault.moreProofRequested}
+            className={cn(
+              "rounded-lg border px-4 py-3 text-left text-xs font-black uppercase tracking-widest transition-colors",
+              vault.moreProofRequested
+                ? "border-amber-500/20 bg-amber-500/10 text-amber-300"
+                : "border-slate-700 bg-slate-950/60 text-slate-300 hover:border-blue-500/30 hover:text-blue-300"
+            )}
+          >
+            {vault.moreProofRequested ? 'Proof requested' : 'Request more proof'}
+          </button>
+        </div>
+
+        {vault.images.length > 0 && (
+          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+            {vault.images.map((imageUrl) => (
+              <div key={imageUrl} className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+                <img src={imageUrl} alt={`${vault.name} evidence`} className="aspect-video w-full object-cover" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BackendAnalysisActions({
+  caseData,
+  onRunSignalAnalysis,
+  onRunDemucs,
+  isSignalAnalysisRunning,
+  isDemucsRunning,
+  compact = false
+}: {
+  caseData: Case,
+  onRunSignalAnalysis: (caseId: string) => void,
+  onRunDemucs: (caseId: string) => void,
+  isSignalAnalysisRunning: boolean,
+  isDemucsRunning: boolean,
+  compact?: boolean
+}) {
+  return (
+    <section className={cn("rounded-lg border border-slate-800 bg-slate-950/50", compact ? "p-4" : "p-5")}>
+      <div className="mb-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Backend analysis</p>
+        {!compact && (
+          <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
+            Re-run forensic signal extraction or Demucs stems for the selected evidence package.
+          </p>
+        )}
+      </div>
+      <div className="space-y-3">
+        <button
+          type="button"
+          onClick={() => onRunSignalAnalysis(caseData.id)}
+          disabled={isSignalAnalysisRunning || isDemucsRunning}
+          className={cn(
+            "flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left text-xs font-black uppercase tracking-widest transition-all",
+            isSignalAnalysisRunning || isDemucsRunning
+              ? "border-slate-800 bg-slate-900 text-slate-500"
+              : "border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/15"
+          )}
+        >
+          <span>Run signal analysis</span>
+          <RefreshCcw className={cn("h-4 w-4", isSignalAnalysisRunning && "animate-spin")} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onRunDemucs(caseData.id)}
+          disabled={isDemucsRunning || isSignalAnalysisRunning}
+          className={cn(
+            "flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left text-xs font-black uppercase tracking-widest transition-all",
+            isDemucsRunning || isSignalAnalysisRunning
+              ? "border-slate-800 bg-slate-900 text-slate-500"
+              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
+          )}
+        >
+          <span>Run Demucs</span>
+          <RefreshCcw className={cn("h-4 w-4", isDemucsRunning && "animate-spin")} />
+        </button>
+      </div>
+      <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+        {caseData.id} · {caseData.audioDeconstruction?.status === 'completed' ? 'stems available' : 'stems not ready'}
+      </p>
+    </section>
+  );
+}
+
+function AuthorityActionsPanel({
+  selectedCase,
+  blockingQuestions,
+  onApplyRecommendedAction,
+  onUpdateStage,
+  setActiveTab,
+  setListTab,
+  onRunSignalAnalysis,
+  onRunDemucs,
+  isSignalAnalysisRunning,
+  isDemucsRunning,
+  compact = false
+}: {
+  selectedCase: Case,
+  blockingQuestions: ReturnType<typeof getBlockingQuestions>,
+  onApplyRecommendedAction: () => void,
+  onUpdateStage: (id: string, stage: CaseStage, notes?: string, type?: 'Agent' | 'Lawyer') => void,
+  setActiveTab: (tab: string) => void,
+  setListTab: (tab: 'upcoming' | 'active' | 'closed') => void,
+  onRunSignalAnalysis: (caseId: string) => void,
+  onRunDemucs: (caseId: string) => void,
+  isSignalAnalysisRunning: boolean,
+  isDemucsRunning: boolean,
+  compact?: boolean
+}) {
+  const toneClasses = {
+    green: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+    amber: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+    red: 'border-red-500/30 bg-red-500/10 text-red-300',
+    blue: 'border-blue-500/30 bg-blue-500/10 text-blue-300',
+    purple: 'border-purple-500/30 bg-purple-500/10 text-purple-300'
+  };
+  const visibleQuestions = compact ? blockingQuestions.slice(0, 2) : blockingQuestions;
+
+  return (
+    <aside className={cn("border-l border-slate-800 bg-slate-900/50 max-xl:border-l-0", compact ? "p-4" : "p-6")}>
+      <div className="sticky top-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Authority actions</p>
+        <p className={cn("mt-2 font-bold text-slate-400", compact ? "text-[11px]" : "text-xs")}>{selectedCase.id} · {selectedCase.location.name}</p>
+        <div className={cn("mt-4", compact ? "space-y-2" : "space-y-3")}>
+          <button onClick={onApplyRecommendedAction} className={cn("w-full rounded-lg bg-blue-600 text-left font-black uppercase tracking-widest text-white", compact ? "px-3 py-2.5 text-[10px]" : "px-4 py-3 text-xs")}>
+            Apply recommendation
+          </button>
+          <button onClick={() => { onUpdateStage(selectedCase.id, 'Ready For Legal', 'Authority override: evidence sent for legal sufficiency review.', 'Lawyer'); setActiveTab('cases'); }} className={cn("w-full rounded-lg border border-slate-700 bg-slate-950/60 text-left font-black uppercase tracking-widest text-slate-300", compact ? "px-3 py-2.5 text-[10px]" : "px-4 py-3 text-xs")}>
+            Send to Litigation
+          </button>
+          <button onClick={() => { onUpdateStage(selectedCase.id, 'Agent Assignment', 'Authority override: field verification requested.', 'Agent'); }} className={cn("w-full rounded-lg border border-slate-700 bg-slate-950/60 text-left font-black uppercase tracking-widest text-slate-300", compact ? "px-3 py-2.5 text-[10px]" : "px-4 py-3 text-xs")}>
+            Assign Agent
+          </button>
+          <button onClick={() => { onUpdateStage(selectedCase.id, 'Closed', 'Authority closed the case after intake review.'); setListTab('closed'); }} className={cn("w-full rounded-lg border border-red-500/30 bg-red-500/10 text-left font-black uppercase tracking-widest text-red-300", compact ? "px-3 py-2.5 text-[10px]" : "px-4 py-3 text-xs")}>
+            Close case
+          </button>
+        </div>
+
+        <div className={compact ? "mt-4" : "mt-6"}>
+          <BackendAnalysisActions
+            caseData={selectedCase}
+            onRunSignalAnalysis={onRunSignalAnalysis}
+            onRunDemucs={onRunDemucs}
+            isSignalAnalysisRunning={isSignalAnalysisRunning}
+            isDemucsRunning={isDemucsRunning}
+            compact
+          />
+        </div>
+
+        <div className={cn("border-t border-slate-800", compact ? "mt-4 pt-4" : "mt-8 pt-6")}>
+          <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">Blocking questions</p>
+          <div className={cn("mt-3", compact ? "space-y-2" : "space-y-4")}>
+            {visibleQuestions.map((question) => (
+              <div key={question.title} className={cn("rounded-lg border border-slate-800 bg-slate-950/50", compact ? "p-3" : "p-4")}>
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <p className={cn("font-black text-white", compact ? "text-xs" : "text-sm")}>{question.title}</p>
+                  <span className={cn("shrink-0 rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-widest", toneClasses[question.tone])}>
+                    {question.status}
+                  </span>
+                </div>
+                {!compact && <p className="text-xs leading-5 text-slate-500">{question.detail}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function AuthorityVenueEvidencePage({
+  cases,
+  selectedCaseId,
+  onSelectCase,
+  onUpdateStage,
+  onRequestMoreProof,
+  setActiveTab,
+  setListTab,
+  onRunSignalAnalysis,
+  onRunDemucs,
+  runningSignalAnalysisIds,
+  runningDemucsIds
+}: {
+  cases: Case[],
+  selectedCaseId: string | null,
+  onSelectCase: (id: string) => void,
+  onUpdateStage: (id: string, stage: CaseStage, notes?: string, type?: 'Agent' | 'Lawyer') => void,
+  onRequestMoreProof: (caseId: string, vaultId: string) => void,
+  setActiveTab: (tab: string) => void,
+  setListTab: (tab: 'upcoming' | 'active' | 'closed') => void,
+  onRunSignalAnalysis: (caseId: string) => void,
+  onRunDemucs: (caseId: string) => void,
+  runningSignalAnalysisIds: Set<string>,
+  runningDemucsIds: Set<string>
+}) {
+  const selectedCase = cases.find((caseData) => caseData.id === selectedCaseId) || cases[0];
+  const [expandedVaultIds, setExpandedVaultIds] = useState<Set<string>>(() => new Set());
+  const [expandedCaseIds, setExpandedCaseIds] = useState<Set<string>>(() => new Set());
+
+  const venueCases = useMemo(() => {
+    if (!selectedCase) return [];
+    return [...cases]
+      .filter((caseData) => caseData.location.name === selectedCase.location.name)
+      .sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime());
+  }, [cases, selectedCase]);
+
+  useEffect(() => {
+    if (!selectedCase?.evidenceVaults[0]) return;
+    setExpandedVaultIds((current) => {
+      if (current.size > 0) return current;
+      return new Set([selectedCase.evidenceVaults[0].id]);
+    });
+  }, [selectedCase?.id, selectedCase?.evidenceVaults]);
+
+  useEffect(() => {
+    if (!selectedCase?.id) return;
+    setExpandedCaseIds((current) => {
+      if (current.has(selectedCase.id)) return current;
+      return new Set([...current, selectedCase.id]);
+    });
+  }, [selectedCase?.id]);
+
+  if (!selectedCase) {
+    return (
+      <div className="flex h-full items-center justify-center bg-slate-950 text-slate-500">
+        <p className="text-sm font-bold">No venue evidence available.</p>
+      </div>
+    );
+  }
+
+  const venueValue = venueCases.reduce((sum, caseData) => sum + caseData.recoverableValue, 0);
+  const packageCount = venueCases.reduce((sum, caseData) => sum + caseData.evidenceVaults.length, 0);
+  const profile = getDecisionProfile(selectedCase);
+  const blockingQuestions = getBlockingQuestions(selectedCase);
+
+  const selectCase = (caseId: string) => {
+    onSelectCase(caseId);
+    const nextPath = `/authority/venues/${encodeURIComponent(caseId)}`;
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, '', nextPath);
+    }
+  };
+
+  const applyRecommendedAction = () => {
+    if (profile.action === 'Send to Litigation') {
+      onUpdateStage(selectedCase.id, 'Ready For Legal', profile.reason, 'Lawyer');
+      setListTab('active');
+      return;
+    }
+    if (profile.action === 'Assign to Agent') {
+      const vaultId = selectedCase.evidenceVaults[0]?.id;
+      if (vaultId) onRequestMoreProof(selectedCase.id, vaultId);
+      onUpdateStage(selectedCase.id, 'Agent Assignment', profile.reason, 'Agent');
+      setListTab('active');
+      return;
+    }
+    if (profile.action === 'Close Candidate') {
+      onUpdateStage(selectedCase.id, 'Closed', profile.reason);
+      setListTab('closed');
+      return;
+    }
+    onUpdateStage(selectedCase.id, 'Under Review', profile.reason);
+    setListTab('active');
+  };
+
+  const toggleVault = (vaultId: string) => {
+    setExpandedVaultIds((current) => {
+      const next = new Set(current);
+      if (next.has(vaultId)) next.delete(vaultId);
+      else next.add(vaultId);
+      return next;
+    });
+  };
+
+  const toggleCaseEvidence = (caseId: string) => {
+    setExpandedCaseIds((current) => {
+      const next = new Set(current);
+      if (next.has(caseId)) next.delete(caseId);
+      else next.add(caseId);
+      return next;
+    });
+  };
+
+  return (
+    <div className="grid h-full grid-cols-[260px_minmax(0,0.9fr)_260px] overflow-hidden bg-slate-950 text-slate-100 max-xl:grid-cols-1 max-xl:overflow-y-auto">
+      <aside className="border-r border-slate-800 bg-slate-900/50 max-xl:border-r-0">
+        <div className="border-b border-slate-800 p-4">
+          <button
+            type="button"
+            onClick={() => setActiveTab('cases')}
+            className="mb-4 inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-slate-500 transition-colors hover:text-blue-300"
+          >
+            <ArrowRight className="h-3 w-3 rotate-180" />
+            Authority queue
+          </button>
+          <p className="text-[9px] font-black uppercase tracking-[0.22em] text-blue-400">Venue evidence</p>
+          <h2 className="mt-2 text-xl font-black tracking-tight text-white">{selectedCase.location.name}</h2>
+          <p className="mt-2 line-clamp-3 text-[11px] font-medium leading-4 text-slate-400">{selectedCase.location.address}</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2.5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Cases</p>
+              <p className="mt-1 text-lg font-black text-white">{venueCases.length}</p>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2.5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Packages</p>
+              <p className="mt-1 text-lg font-black text-white">{packageCount}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-h-[calc(100vh-15.5rem)] overflow-y-auto">
+          {venueCases.map((caseData) => {
+            const caseProfile = getDecisionProfile(caseData);
+            return (
+              <button
+                key={caseData.id}
+                type="button"
+                onClick={() => selectCase(caseData.id)}
+                className={cn(
+                  "w-full border-b border-slate-800 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.03]",
+                  selectedCase.id === caseData.id && "bg-blue-500/10"
+                )}
+              >
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-300">{caseData.id}</p>
+                  <span className="text-[10px] font-black text-white">{caseData.qualityScore}%</span>
+                </div>
+                <h3 className="truncate text-xs font-black text-white">{caseData.songAssessment.title}</h3>
+                <p className="mt-1 text-[10px] text-slate-500">{format(caseData.timestamp, 'MMM d, HH:mm')} · {caseProfile.action}</p>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      <main className="overflow-y-auto p-5">
+        <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400">{selectedCase.id} · active case</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight text-white">Evidence against {selectedCase.location.name}</h1>
+              <p className="mt-2 max-w-3xl text-xs font-medium leading-5 text-slate-400">
+                This page keeps the authority action rail bound to the case selected here while the center view shows every case and evidence package recorded against the venue.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Venue value</p>
+                <p className="mt-1 text-xl font-black text-blue-300">₹{(venueValue / 1000).toFixed(0)}k</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Current stage</p>
+                <p className="mt-1 text-xs font-black text-white">{selectedCase.stage}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-4 space-y-4">
+          {venueCases.map((caseData) => {
+            const isCaseExpanded = expandedCaseIds.has(caseData.id);
+            return (
+            <div key={caseData.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      selectCase(caseData.id);
+                      toggleCaseEvidence(caseData.id);
+                    }}
+                    className="text-left"
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400">{caseData.id} · {format(caseData.timestamp, 'MMM d, yyyy HH:mm')}</p>
+                    <h2 className="mt-2 text-xl font-black tracking-tight text-white">{caseData.songAssessment.title}</h2>
+                    <p className="mt-1 text-xs font-medium text-slate-400">{caseData.songAssessment.artists.join(', ')} · {caseData.musicLabel}</p>
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-slate-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">{caseData.stage}</span>
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-300">{getTrustPassCount(caseData)}/5 trust</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      selectCase(caseData.id);
+                      toggleCaseEvidence(caseData.id);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-blue-500/40 hover:text-blue-300"
+                  >
+                    Evidence
+                    <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", isCaseExpanded && "rotate-180 text-blue-300")} />
+                  </button>
+                </div>
+              </div>
+
+              <AnimatePresence initial={false}>
+                {isCaseExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="mb-4 overflow-hidden"
+                  >
+                    <SignalEvidencePanel caseData={caseData} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="grid gap-3">
+                {caseData.evidenceVaults.map((vault) => {
+                  const isExpanded = expandedVaultIds.has(vault.id);
+                  const videoUrl = vault.videoUrl || caseData.videoProofUrl || caseData.absoluteProof.smallVideoUrl;
+                  return (
+                    <div key={vault.id} className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/50">
+                      <button
+                        type="button"
+                        onClick={() => toggleVault(vault.id)}
+                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 p-3 text-left transition-colors hover:bg-white/[0.03]"
+                      >
+                        <div className="min-w-0">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <p className="truncate text-sm font-black text-white">{vault.name}</p>
+                            <span className={cn(
+                              "rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-widest",
+                              vault.moreProofRequested ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                            )}>
+                              {vault.moreProofRequested ? 'Proof requested' : 'Reviewable'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                            {format(vault.timestamp, 'MMM d, HH:mm')} · {vault.images.length} images · {videoUrl ? 'video attached' : 'no video'}
+                          </p>
+                        </div>
+                        <ChevronDown className={cn("h-4 w-4 text-slate-500 transition-transform", isExpanded && "rotate-180 text-blue-300")} />
+                      </button>
+
+                      <AnimatePresence initial={false}>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden border-t border-slate-800"
+                          >
+                            <AuthorityStyleEvidencePackage
+                              caseData={caseData}
+                              vault={vault}
+                              onRequestMoreProof={onRequestMoreProof}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+          })}
+        </section>
+      </main>
+
+      <AuthorityActionsPanel
+        selectedCase={selectedCase}
+        blockingQuestions={blockingQuestions}
+        onApplyRecommendedAction={applyRecommendedAction}
+        onUpdateStage={onUpdateStage}
+        setActiveTab={setActiveTab}
+        setListTab={setListTab}
+        onRunSignalAnalysis={onRunSignalAnalysis}
+        onRunDemucs={onRunDemucs}
+        isSignalAnalysisRunning={runningSignalAnalysisIds.has(selectedCase.id)}
+        isDemucsRunning={runningDemucsIds.has(selectedCase.id)}
+        compact
+      />
+    </div>
+  );
+}
+
+function VenueCaseStack({
+  venueCases,
+  selectedCaseId,
+  onSelectCase
+}: {
+  venueCases: Case[],
+  selectedCaseId: string,
+  onSelectCase: (caseId: string) => void
+}) {
+  const songsCaught = useMemo(() => {
+    const grouped = new Map<string, {
+      title: string;
+      artists: string;
+      isrc: string;
+      rights: string;
+      cases: Case[];
+      bestScore: number;
+      value: number;
+      latest: Date;
+    }>();
+
+    venueCases.forEach((caseData) => {
+      const key = caseData.songAssessment.isrc || `${caseData.songAssessment.title}:${caseData.songAssessment.artists.join(',')}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.cases.push(caseData);
+        existing.bestScore = Math.max(existing.bestScore, caseData.qualityScore);
+        existing.value += caseData.recoverableValue;
+        if (caseData.timestamp > existing.latest) existing.latest = caseData.timestamp;
+        return;
+      }
+
+      grouped.set(key, {
+        title: caseData.songAssessment.title,
+        artists: caseData.songAssessment.artists.join(', '),
+        isrc: caseData.songAssessment.isrc || 'No ISRC',
+        rights: caseData.songAssessment.rightsAssociation || 'Rights pending',
+        cases: [caseData],
+        bestScore: caseData.qualityScore,
+        value: caseData.recoverableValue,
+        latest: caseData.timestamp
+      });
+    });
+
+    return [...grouped.values()].sort((left, right) => right.latest.getTime() - left.latest.getTime());
+  }, [venueCases]);
+
+  return (
+    <section className="space-y-5">
+      <div className="rounded-md border border-white/10 bg-[#111113] p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="font-mono text-[11px] font-black uppercase tracking-[0.32em] text-slate-500">Detected tracks</p>
+            <h3 className="mt-2 text-lg font-black tracking-tight text-white">{songsCaught.length} song{songsCaught.length === 1 ? '' : 's'} shown</h3>
+          </div>
+          <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-mono text-[10px] font-black text-emerald-200">
+            {venueCases.length} linked case{venueCases.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div className="overflow-hidden rounded-md border border-white/10">
+          <div className="grid grid-cols-[0.8fr_1.4fr_1fr_0.8fr_0.7fr] border-b border-white/10 bg-white/[0.03] px-4 py-3 font-mono text-[10px] font-black uppercase tracking-[0.22em] text-slate-500 max-lg:hidden">
+            <span>Date</span>
+            <span>Track</span>
+            <span>Artist</span>
+            <span>Source</span>
+            <span className="text-right">Conf</span>
+          </div>
+          {songsCaught.map((song) => (
+            <div key={`${song.title}:${song.isrc}`} className="grid grid-cols-[0.8fr_1.4fr_1fr_0.8fr_0.7fr] items-center gap-4 border-b border-white/5 px-4 py-4 last:border-b-0 max-lg:grid-cols-1">
+              <p className="font-mono text-xs font-bold text-slate-400">{format(song.latest, 'MM-dd')}</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-white">{song.title}</p>
+                <p className="mt-1 font-mono text-[10px] font-bold uppercase tracking-widest text-slate-600">{song.isrc} · {song.rights}</p>
+              </div>
+              <p className="truncate text-sm font-medium text-slate-400">{song.artists}</p>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-[10px] font-bold text-slate-300">
+                  {song.cases.length} case{song.cases.length === 1 ? '' : 's'}
+                </span>
+                <span className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-[10px] font-bold text-slate-300">
+                  ₹{(song.value / 1000).toFixed(0)}k value
+                </span>
+              </div>
+              <p className="font-mono text-sm font-black text-emerald-300 lg:text-right">{song.bestScore}%</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-md border border-white/10 bg-[#111113] p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="font-mono text-[11px] font-black uppercase tracking-[0.32em] text-slate-500">Attached cases</p>
+            <h3 className="mt-2 text-lg font-black tracking-tight text-white">{venueCases.length} case record{venueCases.length === 1 ? '' : 's'}</h3>
+          </div>
+          <span className="rounded-md border border-slate-700 px-3 py-1.5 font-mono text-[10px] font-black text-slate-400">
+            ₹{(venueCases.reduce((sum, caseData) => sum + caseData.recoverableValue, 0) / 1000).toFixed(0)}k total
+          </span>
+        </div>
+        <div className="grid gap-3">
+          {venueCases.map((caseData) => {
+            const profile = getDecisionProfile(caseData);
+            return (
+              <button
+                key={caseData.id}
+                type="button"
+                onClick={() => onSelectCase(caseData.id)}
+                className={cn(
+                  "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md border p-4 text-left transition-colors",
+                  selectedCaseId === caseData.id
+                    ? "border-sky-500/40 bg-sky-500/10"
+                    : "border-white/10 bg-black/30 hover:border-slate-700 hover:bg-white/[0.03]"
+                )}
+              >
+                <div className="min-w-0">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[10px] font-black uppercase tracking-widest text-sky-300">{caseData.id}</span>
+                    <span className="font-mono text-[10px] font-bold text-slate-600">{format(caseData.timestamp, 'MMM d, HH:mm')}</span>
+                    <span className="rounded-md border border-slate-700 px-2 py-0.5 font-mono text-[8px] font-black uppercase tracking-widest text-slate-400">{caseData.stage}</span>
+                  </div>
+                  <p className="truncate text-sm font-black text-white">{caseData.songAssessment.title}</p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{caseData.songAssessment.artists.join(', ')} · {caseData.songAssessment.isrc || 'No ISRC'}</p>
+                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{caseData.absoluteProof.performanceContext}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-black text-white">{caseData.qualityScore}%</p>
+                  <p className={cn(
+                    "mt-1 font-mono text-[9px] font-black uppercase tracking-widest",
+                    profile.tone === 'green' ? "text-emerald-300" : profile.tone === 'red' ? "text-red-300" : profile.tone === 'purple' ? "text-purple-300" : "text-amber-300"
+                  )}>
+                    {profile.action}
+                  </p>
+                  <p className="mt-2 font-mono text-[9px] font-black uppercase tracking-widest text-sky-300">Open evidence</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CaseAnalysisPanel({ caseData }: { caseData: Case }) {
+  const venueConfidence = Math.min(96, Math.max(42, 52 + caseData.pastOffences * 9 + (caseData.trustGates.geofencingContinuity ? 18 : -12)));
+  const performanceContextProfile = getPerformanceContextProfile(caseData);
+  const mandateProfile = getViolationMandateProfile(caseData);
+  const publicContext = performanceContextProfile.score;
+  const rightsReadiness = caseData.songAssessment.isrc && caseData.songAssessment.rightsAssociation ? 86 : 46;
+  const trustPassCount = getTrustPassCount(caseData);
+
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-900 p-6">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Detailed case analysis</p>
+          <h3 className="mt-2 text-2xl font-black tracking-tight text-white">{caseData.id}</h3>
+          <p className="mt-1 text-sm font-medium text-slate-400">{caseData.location.name} • {format(caseData.timestamp, 'MMM d, yyyy HH:mm')}</p>
+        </div>
+        <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-blue-300">
+          ₹{caseData.recoverableValue.toLocaleString()} recovery
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
+        <ScoreBar label="Track proof" value={caseData.qualityScore} tone={caseData.qualityScore > 80 ? 'green' : 'amber'} />
+        <ScoreBar label="Venue proof" value={venueConfidence} tone={venueConfidence > 72 ? 'green' : 'amber'} />
+        <ScoreBar
+          label="Violation context"
+          value={publicContext}
+          tone={publicContext > 70 ? 'green' : publicContext >= 55 ? 'amber' : 'red'}
+          reasonOverride={`Reason: ${performanceContextProfile.reason} Mandate: ${mandateProfile.label}.`}
+        />
+        <ScoreBar label="Rights readiness" value={rightsReadiness} tone={rightsReadiness > 75 ? 'green' : 'amber'} />
+      </div>
+
+      <EvidenceMediaDossier caseData={caseData} />
+
+      <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Evidence facts</p>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between gap-4"><span className="text-slate-500">Track</span><span className="text-right font-bold text-white">{caseData.songAssessment.title}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-slate-500">Artists</span><span className="text-right font-bold text-white">{caseData.songAssessment.artists.join(', ')}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-slate-500">ISRC</span><span className="text-right font-mono text-xs font-bold text-blue-300">{caseData.songAssessment.isrc}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-slate-500">Rights</span><span className="text-right font-bold text-emerald-300">{caseData.songAssessment.rightsAssociation}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-slate-500">Trust gates</span><span className="text-right font-bold text-white">{trustPassCount}/5 passed</span></div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Reviewer interpretation</p>
+          <p className="text-sm font-medium leading-6 text-slate-300">{caseData.aiExplanation}</p>
+          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Violation context note</p>
+            <p className="mt-1 text-sm text-slate-300">{caseData.absoluteProof.performanceContext}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+        <p className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Evidence vaults</p>
+        <div className="grid gap-3">
+          {caseData.evidenceVaults.map((vault) => (
+            <div key={vault.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-black text-white">{vault.name}</p>
+                <span className={cn(
+                  "rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-widest",
+                  vault.moreProofRequested ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                )}>
+                  {vault.moreProofRequested ? 'Proof requested' : 'Reviewable'}
+                </span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">{vault.notes || 'No vault notes provided.'}</p>
+              <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-slate-600">{vault.images.length} images • {vault.videoUrl ? 'video attached' : 'no video'}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AuthorityConsoleMetrics({
+  selectedCase,
+  venueCases,
+  venueConfidence,
+  publicContext,
+  rightsReadiness
+}: {
+  selectedCase: Case;
+  venueCases: Case[];
+  venueConfidence: number;
+  publicContext: number;
+  rightsReadiness: number;
+}) {
+  const venueAttributionSignal = getVenueAttributionSignal(selectedCase);
+  const metricItems = [
+    { label: 'Integrity coverage', value: `${getTrustPassCount(selectedCase) * 20}%`, detail: 'trust gates retained', icon: <LockKeyhole className="h-4 w-4" /> },
+    { label: 'Venue attribution', value: `${Math.round(venueAttributionSignal.score)}%`, detail: humanizeToken(selectedCase.venueAttribution?.status || selectedCase.locationDelta?.geoBucket || 'pending'), icon: <Navigation className="h-4 w-4" /> },
+    { label: 'Audio identity', value: `${selectedCase.qualityScore}%`, detail: selectedCase.songAssessment.isrc || 'retry queue', icon: <Music className="h-4 w-4" /> },
+    { label: 'Rights readiness', value: `${rightsReadiness}%`, detail: selectedCase.songAssessment.rightsAssociation || 'main blocker', icon: <ShieldCheck className="h-4 w-4" /> },
+    { label: 'Violation context', value: `${publicContext}%`, detail: 'mandate posture', icon: <Gavel className="h-4 w-4" /> },
+    { label: 'Fact tables', value: String(venueCases.length), detail: 'linked cases', icon: <Columns className="h-4 w-4" /> }
+  ];
+
+  return (
+    <div className="grid border-b border-white/10 bg-[#111113] max-lg:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+      {metricItems.map((item) => (
+        <div key={item.label} className="border-r border-white/10 px-5 py-4 last:border-r-0">
+          <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <span className="text-slate-400">{item.icon}</span>
+            {item.label}
+          </div>
+          <p className="text-2xl font-black tracking-tight text-white">{item.value}</p>
+          <p className="mt-1 text-sm font-medium text-slate-400">{item.detail}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AuthorityCaseFactsRail({
+  selectedCase,
+  profile,
+  sourceContext,
+  blockingQuestions
+}: {
+  selectedCase: Case;
+  profile: ReturnType<typeof getDecisionProfile>;
+  sourceContext: ReturnType<typeof detectSourceContext>;
+  blockingQuestions: ReturnType<typeof getBlockingQuestions>;
+}) {
+  const venueAttributionSignal = getVenueAttributionSignal(selectedCase);
+  const selectedDeltas = [
+    selectedCase.venueAttribution?.selectedVenueDistanceStartMeters ?? selectedCase.locationDelta?.selectedVenueDistanceStartMeters,
+    selectedCase.venueAttribution?.selectedVenueDistanceEndMeters ?? selectedCase.locationDelta?.selectedVenueDistanceEndMeters,
+  ]
+    .filter((value) => value !== null && value !== undefined && value !== '')
+    .map(Number)
+    .filter(Number.isFinite);
+  const selectedMin = selectedDeltas.length ? Math.min(...selectedDeltas) : null;
+  const fields = [
+    ['Case ID', selectedCase.id],
+    ['Venue', selectedCase.location.name],
+    ['Track', selectedCase.songAssessment.title],
+    ['Artist', selectedCase.songAssessment.artists.join(', ')],
+    ['Stage', selectedCase.stage],
+    ['Disposition', profile.action],
+    ['Venue attribution', `${humanizeToken(selectedCase.venueAttribution?.status || 'pending')} · ${venueAttributionSignal.score}`],
+    ['Selected venue delta', formatMeters(selectedMin)],
+    ['Source context', sourceContext.label],
+    ['Rights', selectedCase.songAssessment.rightsAssociation || 'pending'],
+    ['Trust gates', `${getTrustPassCount(selectedCase)}/5 passed`]
+  ];
+
+  return (
+    <aside className="border-l border-white/10 bg-[#0d0d0f] p-5 text-slate-100 max-2xl:hidden">
+      <div className="sticky top-0">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-black text-white">Case Detail</p>
+            <p className="font-mono text-xs text-slate-500">{selectedCase.id}</p>
+          </div>
+          <span className={cn(
+            "rounded-md border px-2.5 py-1 font-mono text-[10px] font-black",
+            profile.tone === 'green' ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : profile.tone === 'red' ? "border-red-500/30 bg-red-500/10 text-red-200" : "border-sky-500/30 bg-sky-500/10 text-sky-200"
+          )}>
+            {profile.action}
+          </span>
+        </div>
+
+        <div className="mb-6 grid grid-cols-2 gap-3">
+          <div className="rounded-md border border-white/10 bg-[#121214] p-4">
+            <p className="font-mono text-[10px] font-black uppercase tracking-widest text-slate-600">Readiness</p>
+            <p className="mt-2 text-2xl font-black text-white">{selectedCase.qualityScore}</p>
+          </div>
+          <div className="rounded-md border border-white/10 bg-[#121214] p-4">
+            <p className="font-mono text-[10px] font-black uppercase tracking-widest text-slate-600">Value</p>
+            <p className="mt-2 text-2xl font-black text-white">₹{selectedCase.recoverableValue.toLocaleString()}</p>
+          </div>
+        </div>
+
+        <p className="mb-3 font-mono text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">Case fields</p>
+        <div className="overflow-hidden rounded-md border border-white/10">
+          {fields.map(([label, value]) => (
+            <div key={label} className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-white/10 px-3 py-3 last:border-b-0">
+              <p className="text-xs font-medium text-slate-500">{label}</p>
+              <p className="truncate text-sm font-bold text-slate-200">{value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6">
+          <p className="mb-3 font-mono text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">Review blockers</p>
+          <div className="space-y-2">
+            {blockingQuestions.slice(0, 4).map((question) => (
+              <div key={question.title} className="rounded-md border border-white/10 bg-[#121214] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-black text-white">{question.title}</p>
+                  <span className="font-mono text-[10px] font-black uppercase tracking-widest text-slate-500">{question.status}</span>
+                </div>
+                <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{question.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function AuthorityDecisionCockpit({
+  cases,
+  selectedCaseId,
+  onSelectCase,
+  onOpenVenueEvidence,
+  onUpdateStage,
+  onRequestMoreProof,
+  setActiveTab,
+  setListTab,
+  onRunSignalAnalysis,
+  onRunDemucs,
+  runningSignalAnalysisIds,
+  runningDemucsIds
+}: {
+  cases: Case[],
+  selectedCaseId: string | null,
+  onSelectCase: (id: string) => void,
+  onOpenVenueEvidence: (id: string) => void,
+  onUpdateStage: (id: string, stage: CaseStage, notes?: string, type?: 'Agent' | 'Lawyer') => void,
+  onRequestMoreProof: (caseId: string, vaultId: string) => void,
+  setActiveTab: (tab: string) => void,
+  setListTab: (tab: 'upcoming' | 'active' | 'closed') => void,
+  onRunSignalAnalysis: (caseId: string) => void,
+  onRunDemucs: (caseId: string) => void,
+  runningSignalAnalysisIds: Set<string>,
+  runningDemucsIds: Set<string>
+}) {
+  const prioritizedCases = useMemo(() => (
+    [...cases]
+      .filter((caseData) => caseData.stage !== 'Closed')
+      .sort((left, right) => getCasePriority(right) - getCasePriority(left))
+  ), [cases]);
+  const selectedCase = prioritizedCases.find((caseData) => caseData.id === selectedCaseId) || prioritizedCases[0] || cases[0];
+  const venueCases = useMemo(() => (
+    [...cases]
+      .filter((caseData) => caseData.location.name === selectedCase?.location.name)
+      .sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime())
+  ), [cases, selectedCase?.location.name]);
+  const profile = selectedCase ? getDecisionProfile(selectedCase) : null;
+  const venueConfidence = selectedCase ? Math.min(96, Math.max(42, 52 + selectedCase.pastOffences * 9 + (selectedCase.trustGates.geofencingContinuity ? 18 : -12))) : 0;
+  const performanceContextProfile = selectedCase ? getPerformanceContextProfile(selectedCase) : null;
+  const mandateProfile = selectedCase ? getViolationMandateProfile(selectedCase) : null;
+  const publicContext = performanceContextProfile?.score || 0;
+  const rightsReadiness = selectedCase?.songAssessment.isrc && selectedCase?.songAssessment.rightsAssociation ? 86 : 46;
+  const proceduralRisk = selectedCase ? Math.max(18, 88 - getTrustPassCount(selectedCase) * 13 - (selectedCase.chainOfCustody.length * 3)) : 0;
+  const blockingQuestions = selectedCase ? getBlockingQuestions(selectedCase) : [];
+  const sourceContext = selectedCase ? detectSourceContext(selectedCase) : null;
+
+  if (!selectedCase || !profile) {
+    return (
+      <div className="flex h-full items-center justify-center bg-slate-950 text-slate-500">
+        <p className="text-sm font-bold">No cases available for authority triage.</p>
+      </div>
+    );
+  }
+
+  const applyRecommendedAction = () => {
+    if (profile.action === 'Send to Litigation') {
+      onUpdateStage(selectedCase.id, 'Ready For Legal', profile.reason, 'Lawyer');
+      setListTab('active');
+      return;
+    }
+    if (profile.action === 'Assign to Agent') {
+      const vaultId = selectedCase.evidenceVaults[0]?.id;
+      if (vaultId) onRequestMoreProof(selectedCase.id, vaultId);
+      onUpdateStage(selectedCase.id, 'Agent Assignment', profile.reason, 'Agent');
+      setListTab('active');
+      return;
+    }
+    if (profile.action === 'Close Candidate') {
+      onUpdateStage(selectedCase.id, 'Closed', profile.reason);
+      setListTab('closed');
+      return;
+    }
+    onUpdateStage(selectedCase.id, 'Under Review', profile.reason);
+    setListTab('active');
+  };
+
+  const toneClasses = {
+    green: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+    amber: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+    red: 'border-red-500/30 bg-red-500/10 text-red-300',
+    blue: 'border-blue-500/30 bg-blue-500/10 text-blue-300',
+    purple: 'border-purple-500/30 bg-purple-500/10 text-purple-300'
+  };
+
+  return (
+    <div className="grid h-full grid-cols-[340px_minmax(0,1fr)_360px] overflow-hidden bg-[#09090b] text-slate-100 max-2xl:grid-cols-[340px_minmax(0,1fr)] max-xl:grid-cols-1 max-xl:overflow-y-auto">
+      <aside className="border-r border-white/10 bg-[#0d0d0f] max-xl:border-r-0">
+        <div className="border-b border-white/10 p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-[#141417] text-sky-200">
+              <Columns className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black tracking-tight text-white">Signal Console</h2>
+              <p className="text-xs font-medium text-slate-500">Directed authority intake</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-md border border-white/10 bg-[#141417] px-3 py-2 text-slate-500">
+            <Search className="h-4 w-4" />
+            <span className="text-sm font-medium">Search case, venue, signal</span>
+          </div>
+          <div className="mt-5 flex items-center justify-between">
+            <p className="text-sm font-black text-white">Signal Work Queue</p>
+            <span className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] font-black text-slate-300">{prioritizedCases.length} cases</span>
+          </div>
+        </div>
+        <div className="max-h-[calc(100vh-12rem)] overflow-y-auto">
+          {prioritizedCases.map((caseData) => {
+            const rowProfile = getDecisionProfile(caseData);
+            return (
+              <button
+                key={caseData.id}
+                type="button"
+                onClick={() => onSelectCase(caseData.id)}
+                className={cn(
+                  "w-full border-b border-white/10 px-5 py-5 text-left transition-colors hover:bg-white/[0.03]",
+                  selectedCase.id === caseData.id && "bg-white/[0.06]"
+                )}
+              >
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-500">{caseData.id}</span>
+                  <span className={cn("rounded-md border px-2.5 py-1 font-mono text-[9px] font-black", toneClasses[rowProfile.tone])}>
+                    {rowProfile.action}
+                  </span>
+                </div>
+                <h3 className="text-sm font-black text-white">{caseData.location.name}</h3>
+                <p className="mt-1 truncate text-xs text-slate-500">{caseData.songAssessment.title} · {caseData.location.city}</p>
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <p className="text-xs font-bold text-slate-400">{rowProfile.blocker}</p>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-white">{caseData.qualityScore}</p>
+                    <p className="font-mono text-[9px] font-bold uppercase tracking-widest text-slate-600">score</p>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      <main className="overflow-y-auto">
+        <AuthorityConsoleMetrics
+          selectedCase={selectedCase}
+          venueCases={venueCases}
+          venueConfidence={venueConfidence}
+          publicContext={publicContext}
+          rightsReadiness={rightsReadiness}
+        />
+        <div className="border-b border-white/10 bg-[#0d0d0f] p-5">
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-mono text-[11px] font-black uppercase tracking-widest text-slate-500">{selectedCase.id}</p>
+                <span className={cn("rounded-md border px-2 py-1 font-mono text-[10px] font-black", toneClasses[profile.tone])}>{profile.action}</span>
+                {mandateProfile && (
+                  <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 font-mono text-[10px] font-black text-slate-300">
+                    {mandateProfile.bodies.length ? mandateProfile.bodies.join(' + ') : 'unmapped'}
+                  </span>
+                )}
+              </div>
+              <h1 className="mt-4 text-3xl font-black tracking-tight text-white">{selectedCase.location.name}</h1>
+              <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-400">
+                Venue-first intake: detected songs are grouped under the venue, with every attached case available as the evidence route.
+              </p>
+              <button
+                type="button"
+                onClick={() => onOpenVenueEvidence(selectedCase.id)}
+                className="mt-4 inline-flex items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 font-mono text-[10px] font-black uppercase tracking-widest text-sky-200 transition-colors hover:bg-sky-500/15"
+              >
+                Open detailed evidence view
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex items-center gap-5">
+              <div className="relative h-24 w-24 rounded-full border-[10px] border-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]" />
+              <div>
+                <p className="text-3xl font-black text-white">{selectedCase.qualityScore}</p>
+                <p className="mt-1 text-sm font-medium text-slate-400">case readiness</p>
+                <p className="mt-3 max-w-40 text-sm font-black text-sky-200">{profile.action}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5">
+          <VenueCaseStack
+            venueCases={venueCases}
+            selectedCaseId={selectedCase.id}
+            onSelectCase={onOpenVenueEvidence}
+          />
+        </div>
+      </main>
+      {sourceContext && (
+        <AuthorityCaseFactsRail
+          selectedCase={selectedCase}
+          profile={profile}
+          sourceContext={sourceContext}
+          blockingQuestions={blockingQuestions}
+        />
+      )}
+    </div>
+  );
+}
+
+function AgentProofGapWorkspace({
+  cases,
+  onSelectCase,
+  onUpdateStage,
+  setActiveTab,
+  onCreateVault,
+  routeCaseIds,
+  setRouteCaseIds
+}: {
+  cases: Case[],
+  onSelectCase: (id: string) => void,
+  onUpdateStage: (id: string, stage: CaseStage, notes?: string, type?: 'Agent' | 'Lawyer', resNote?: string, resAgentName?: string) => void,
+  setActiveTab: (tab: string) => void,
+  onCreateVault: (id: string) => void,
+  routeCaseIds: string[],
+  setRouteCaseIds: (ids: string[]) => void
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(cases[0]?.id || null);
+  const selectedCase = cases.find((caseData) => caseData.id === selectedId) || cases[0];
+
+  useEffect(() => {
+    if (!selectedId && cases[0]) setSelectedId(cases[0].id);
+  }, [cases, selectedId]);
+
+  if (!selectedCase) {
+    return (
+      <div className="flex h-full items-center justify-center bg-slate-950 text-slate-500">
+        <div className="text-center">
+          <Smartphone className="mx-auto mb-4 h-12 w-12 opacity-30" />
+          <p className="text-sm font-bold">No proof-gap tasks assigned.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const ensureInRoute = () => {
+    if (!routeCaseIds.includes(selectedCase.id)) {
+      setRouteCaseIds([...routeCaseIds, selectedCase.id]);
+    }
+  };
+
+  return (
+    <div className="grid h-full grid-cols-[360px_minmax(0,1fr)] overflow-hidden bg-slate-950 text-slate-100 max-lg:grid-cols-1 max-lg:overflow-y-auto">
+      <aside className="border-r border-slate-800 bg-slate-900/50 max-lg:border-r-0">
+        <div className="border-b border-slate-800 p-6">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-400">Agent workspace</p>
+          <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Proof gaps</h2>
+          <p className="mt-2 text-xs font-medium leading-5 text-slate-400">Cases are framed as collection tasks, not generic dossiers.</p>
+        </div>
+        {cases.map((caseData) => (
+          <button
+            key={caseData.id}
+            onClick={() => {
+              setSelectedId(caseData.id);
+              onSelectCase(caseData.id);
+            }}
+            className={cn("w-full border-b border-slate-800 px-6 py-5 text-left hover:bg-white/[0.03]", selectedCase.id === caseData.id && "bg-cyan-500/10")}
+          >
+            <p className="text-[10px] font-black uppercase tracking-widest text-cyan-300">{caseData.id}</p>
+            <h3 className="mt-2 text-sm font-black text-white">{caseData.location.name}</h3>
+            <p className="mt-1 text-xs text-slate-500">{caseData.location.city} • ₹{(caseData.recoverableValue / 1000).toFixed(0)}k</p>
+          </button>
+        ))}
+      </aside>
+
+      <main className="overflow-y-auto p-8">
+        <div className="grid grid-cols-[minmax(0,1fr)_340px] gap-6 max-xl:grid-cols-1">
+          <section className="rounded-lg border border-slate-800 bg-slate-900 p-7">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-400">{selectedCase.id} • assignment reason</p>
+            <h1 className="mt-3 text-4xl font-black tracking-tight text-white">Fix venue and violation-source proof</h1>
+            <p className="mt-3 max-w-3xl text-sm font-medium leading-6 text-slate-400">
+              Authority found a reviewable track match, but the evidence package needs field-level confirmation before Litigation can use it.
+            </p>
+            <div className="mt-6 grid grid-cols-3 gap-3 max-md:grid-cols-1">
+              <ScoreBar label="Track proof" value={selectedCase.qualityScore} tone="green" />
+              <ScoreBar label="Venue proof" value={Math.min(92, 48 + selectedCase.pastOffences * 10)} tone="amber" />
+              <ScoreBar label="Trust health" value={getTrustPassCount(selectedCase) * 20} tone={getTrustPassCount(selectedCase) >= 4 ? 'green' : 'amber'} />
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-slate-800 bg-slate-900 p-6">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Route actions</p>
+            <div className="mt-4 space-y-3">
+              <button onClick={ensureInRoute} className="w-full rounded-lg bg-cyan-600 px-4 py-3 text-left text-xs font-black uppercase tracking-widest text-white">
+                Add to route
+              </button>
+              <button onClick={() => onCreateVault(selectedCase.id)} className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-300">
+                Add evidence vault
+              </button>
+              <button
+                onClick={() => {
+                  onUpdateStage(selectedCase.id, 'Ready For Legal', undefined, 'Lawyer', 'Field proof added: venue identity and violation source context verified.', selectedCase.assignedTo);
+                  setActiveTab('cases');
+                }}
+                className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-left text-xs font-black uppercase tracking-widest text-emerald-300"
+              >
+                Mark proof complete
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <section className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-7">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Required proof checklist</p>
+          <div className="mt-5 grid gap-3">
+            {[
+              ['Exterior signage photo', 'Capture business name and entrance.', false],
+              ['20 second interior context video', 'Show music source, speaker/DJ area, and public setting.', false],
+              ['GPS at venue entrance', 'Start/end geolocation must align with selected venue.', selectedCase.trustGates.geofencingContinuity],
+              ['Source classification note', 'Recorded playback source, PA system, DJ booth, TV/screen playback, or live performer.', false],
+              ['Privacy constraints respected', 'Avoid unnecessary customer faces and private-party details.', true]
+            ].map(([title, description, done]) => (
+              <div key={String(title)} className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-4 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+                <div className={cn("flex h-7 w-7 items-center justify-center rounded-md border text-xs font-black", done ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-700 text-slate-500")}>
+                  {done ? '✓' : '!'}
+                </div>
+                <div>
+                  <p className="text-sm font-black text-white">{title}</p>
+                  <p className="mt-1 text-xs text-slate-500">{description}</p>
+                </div>
+                <span className={cn("rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest", done ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300")}>
+                  {done ? 'Captured' : 'Required'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function LitigationClaimReadiness({
+  allCases,
+  onSelectCase,
+  onUpdateStage,
+  setActiveTab,
+  onRunSignalAnalysis,
+  onRunDemucs,
+  runningSignalAnalysisIds,
+  runningDemucsIds
+}: {
+  allCases: Case[],
+  onSelectCase: (id: string) => void,
+  onUpdateStage: (id: string, stage: CaseStage, notes?: string) => void,
+  setActiveTab: (tab: string) => void,
+  onRunSignalAnalysis: (caseId: string) => void,
+  onRunDemucs: (caseId: string) => void,
+  runningSignalAnalysisIds: Set<string>,
+  runningDemucsIds: Set<string>
+}) {
+  const dossiers = useMemo(() => {
+    const groups: Record<string, Case[]> = {};
+    allCases
+      .filter((caseData) => ['Ready For Legal', 'Recovery In Progress', 'Closed'].includes(caseData.stage))
+      .forEach((caseData) => {
+        groups[caseData.location.name] = [...(groups[caseData.location.name] || []), caseData];
+      });
+    return Object.entries(groups).map(([venueName, venueCases]) => ({
+      venueName,
+      cases: venueCases.sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime()),
+      totalValue: venueCases.reduce((sum, caseData) => sum + caseData.recoverableValue, 0),
+      risk: venueCases.length > 3 ? 'High' : venueCases.length > 1 ? 'Medium' : 'Low'
+    }));
+  }, [allCases]);
+  const [selectedVenue, setSelectedVenue] = useState<string | null>(dossiers[0]?.venueName || null);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const currentDossier = dossiers.find((dossier) => dossier.venueName === selectedVenue) || dossiers[0];
+  const currentCase = useMemo(() => {
+    if (!currentDossier) {
+      return null;
+    }
+
+    return currentDossier.cases.find((caseData) => caseData.id === selectedCaseId) || currentDossier.cases[0];
+  }, [currentDossier, selectedCaseId]);
+
+  useEffect(() => {
+    if (!selectedVenue && dossiers[0]) setSelectedVenue(dossiers[0].venueName);
+  }, [dossiers, selectedVenue]);
+
+  if (!currentDossier || !currentCase) {
+    return (
+      <div className="flex h-full items-center justify-center bg-slate-950 text-slate-500">
+        <div className="text-center">
+          <Gavel className="mx-auto mb-4 h-12 w-12 opacity-30" />
+          <p className="text-sm font-bold">No claim-ready venues yet.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const venueProof = Math.min(94, 50 + currentCase.pastOffences * 10 + (currentCase.trustGates.geofencingContinuity ? 18 : 0));
+  const licenseReady = currentCase.songAssessment.rightsAssociation ? 78 : 42;
+  const noticeReady = currentCase.qualityScore > 82 && venueProof > 72 && licenseReady > 70;
+
+  return (
+    <div className="grid h-full grid-cols-[320px_minmax(0,1fr)_340px] overflow-hidden bg-slate-950 text-slate-100 max-lg:grid-cols-1 max-lg:overflow-y-auto">
+      <aside className="border-r border-slate-800 bg-slate-900/50 max-lg:border-r-0">
+        <div className="border-b border-slate-800 p-6">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-purple-400">Litigation workspace</p>
+          <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Venue dossiers</h2>
+        </div>
+        {dossiers.map((dossier) => (
+          <button
+            key={dossier.venueName}
+            onClick={() => {
+              setSelectedVenue(dossier.venueName);
+              setSelectedCaseId(null);
+            }}
+            className={cn("w-full border-b border-slate-800 px-6 py-5 text-left hover:bg-white/[0.03]", currentDossier.venueName === dossier.venueName && "bg-purple-500/10")}
+          >
+            <div className="mb-2 flex gap-2">
+              <span className={cn("rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-widest", dossier.risk === 'High' ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300")}>{dossier.risk} risk</span>
+              <span className="rounded-full border border-slate-700 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400">{dossier.cases.length} cases</span>
+            </div>
+            <h3 className="text-sm font-black text-white">{dossier.venueName}</h3>
+            <p className="mt-1 text-xs text-slate-500">₹{(dossier.totalValue / 1000).toFixed(0)}k potential</p>
+          </button>
+        ))}
+      </aside>
+
+      <main className="overflow-y-auto p-8">
+        <section className="rounded-lg border border-slate-800 bg-slate-900 p-7">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-purple-400">Legal sufficiency matrix</p>
+          <h1 className="mt-3 text-4xl font-black tracking-tight text-white">Claim readiness: {noticeReady ? 'Notice Ready' : 'Conditional'}</h1>
+          <p className="mt-3 text-sm font-medium leading-6 text-slate-400">
+            {noticeReady
+              ? 'Forensic, rights, and venue signals are strong enough to prepare external communication.'
+              : 'The rights package is usable, but legal action should wait until venue and violation-source proof are cleaner.'}
+          </p>
+          <div className="mt-6 grid grid-cols-3 gap-3 max-md:grid-cols-1">
+            <ScoreBar label="Forensic" value={currentCase.qualityScore} tone={currentCase.qualityScore > 80 ? 'green' : 'amber'} />
+            <ScoreBar label="Rights" value={licenseReady} tone={licenseReady > 70 ? 'green' : 'amber'} />
+            <ScoreBar label="Venue liability" value={venueProof} tone={venueProof > 72 ? 'green' : 'amber'} />
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-7">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Draft legal recommendation</p>
+          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/50 p-5">
+            <p className="text-sm leading-6 text-slate-300">
+              {noticeReady
+                ? `Prepare a standard notice for ${currentDossier.venueName}. The evidence package ties ${currentCase.songAssessment.title} to a verified venue context with acceptable custody and rights identifiers.`
+                : `Do not issue notice yet for ${currentDossier.venueName}. Track and rights signals are usable, but venue identity or violation-source proof should be strengthened before external communication.`}
+            </p>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-300">ISRC {currentCase.songAssessment.isrc}</span>
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-300">{currentCase.songAssessment.rightsAssociation}</span>
+            <span className="rounded-full border border-slate-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">{getTrustPassCount(currentCase)}/5 trust gates</span>
+          </div>
+        </section>
+
+        <EvidenceMediaDossier caseData={currentCase} />
+      </main>
+
+      <aside className="border-l border-slate-800 bg-slate-900/50 p-6 max-lg:border-l-0">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Notice readiness</p>
+        <div className="mt-4 space-y-3">
+          {[
+            ['Rights owner', true],
+            ['Track identifiers', Boolean(currentCase.songAssessment.isrc)],
+            ['License assessment', licenseReady > 70],
+            ['Venue proof', venueProof > 72],
+            ['Claim proportionality', currentCase.recoverableValue > 50000]
+          ].map(([label, passed]) => (
+            <div key={String(label)} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+              <span className="text-xs font-black text-white">{label}</span>
+              <span className={cn("rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-widest", passed ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300")}>
+                {passed ? 'Pass' : 'Open'}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-6 space-y-3">
+          <button
+            onClick={() => {
+              onUpdateStage(currentCase.id, noticeReady ? 'Recovery In Progress' : 'Agent Assignment', noticeReady ? 'Litigation marked notice package ready.' : 'Litigation returned case for stronger venue/violation-source proof.');
+            }}
+            className="w-full rounded-lg bg-purple-600 px-4 py-3 text-left text-xs font-black uppercase tracking-widest text-white"
+          >
+            {noticeReady ? 'Start recovery' : 'Return to Agent'}
+          </button>
+          <button onClick={() => { onSelectCase(currentCase.id); setActiveTab('cases'); }} className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-300">
+            Open authority view
+          </button>
+        </div>
+
+        <div className="mt-6">
+          <BackendAnalysisActions
+            caseData={currentCase}
+            onRunSignalAnalysis={onRunSignalAnalysis}
+            onRunDemucs={onRunDemucs}
+            isSignalAnalysisRunning={runningSignalAnalysisIds.has(currentCase.id)}
+            isDemucsRunning={runningDemucsIds.has(currentCase.id)}
+            compact
+          />
+        </div>
+
+        <div className="mt-8 border-t border-slate-800 pt-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Venue cases</p>
+            <span className="rounded-full border border-slate-700 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+              {currentDossier.cases.length}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {currentDossier.cases.map((caseData) => {
+              const caseProfile = getDecisionProfile(caseData);
+              return (
+                <button
+                  key={caseData.id}
+                  onClick={() => {
+                    setSelectedCaseId(caseData.id);
+                    onSelectCase(caseData.id);
+                  }}
+                  className={cn(
+                    "w-full rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-left transition-colors hover:border-purple-500/30 hover:bg-purple-500/10",
+                    currentCase.id === caseData.id && "border-purple-500/30 bg-purple-500/10"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-xs font-black text-white">{caseData.id}</p>
+                    <span className="text-[10px] font-black text-purple-300">{caseData.qualityScore}%</span>
+                  </div>
+                  <p className="mt-2 line-clamp-1 text-xs font-bold text-slate-300">{caseData.songAssessment.title}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">{caseProfile.action}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -1585,6 +4659,11 @@ function CaseDetailView({
   onCreateVault,
   onDeleteVault,
   onRequestMoreProof,
+  onBackfillAudioDeconstruction,
+  onReevaluateCase,
+  canBackfillAudioDeconstruction,
+  isBackfillingAudioDeconstruction,
+  isReevaluatingCase,
   setActiveTab,
   setListTab,
   onSelectCase,
@@ -1600,6 +4679,11 @@ function CaseDetailView({
   onCreateVault: (id: string) => void,
   onDeleteVault: (vaultId: string) => void,
   onRequestMoreProof: (vaultId: string) => void,
+  onBackfillAudioDeconstruction: () => void,
+  onReevaluateCase: () => void,
+  canBackfillAudioDeconstruction: boolean,
+  isBackfillingAudioDeconstruction: boolean,
+  isReevaluatingCase: boolean,
   setActiveTab: (tab: string) => void,
   setListTab: (tab: 'upcoming' | 'active' | 'closed') => void,
   onSelectCase: (id: string) => void,
@@ -1612,7 +4696,12 @@ function CaseDetailView({
   const [commentText, setCommentText] = useState('');
   const [activeDetailTab, setActiveDetailTab] = useState<string>('evidence-0');
   const [activeVaultIndex, setActiveVaultIndex] = useState(0);
+  const isSongAnalyticsFailed = isTrackIdentificationFailed(caseData);
+  const isVisualFailure = isVisualAnalyticsFailed(caseData, activeVaultIndex);
   const isEvidenceLocked = ['Ready For Legal', 'Recovery In Progress', 'Closed'].includes(caseData.stage);
+  const orderedAudioArtifacts = [...(caseData.audioDeconstruction?.artifacts || [])].sort((left, right) => (
+    getStemPriority(left.stem) - getStemPriority(right.stem)
+  ));
 
   const handleTabChange = (tab: string) => {
     setActiveDetailTab(tab);
@@ -1858,6 +4947,24 @@ function CaseDetailView({
               <h2 className="text-2xl font-black text-text-primary mb-1">{caseData.songAssessment.title}</h2>
               <p className="text-sm font-bold text-text-secondary">{caseData.songAssessment.artists.join(', ')} • {caseData.musicLabel}</p>
             </div>
+            {isSongAnalyticsFailed && (
+              <div className="shrink-0">
+                <button
+                  type="button"
+                  onClick={onReevaluateCase}
+                  disabled={isReevaluatingCase || !canBackfillAudioDeconstruction}
+                  className={cn(
+                    "inline-flex items-center gap-2 px-4 py-2 text-[9px] font-black uppercase tracking-widest rounded-xl border transition-all",
+                    !isReevaluatingCase && canBackfillAudioDeconstruction
+                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/40 active:scale-95"
+                      : "bg-white/5 border-white/5 text-slate-500 cursor-not-allowed"
+                  )}
+                >
+                  <RefreshCcw className={cn("w-3.5 h-3.5", isReevaluatingCase && "animate-spin")} />
+                  {isReevaluatingCase ? 'Retrying' : 'Retry Analytics'}
+                </button>
+              </div>
+            )}
             <div className="hidden lg:grid grid-cols-2 gap-x-8 gap-y-2 border-l border-border-subtle pl-8">
               <div>
                 <p className="text-[9px] font-black text-text-quaternary uppercase tracking-widest">ISRC</p>
@@ -2018,22 +5125,40 @@ function CaseDetailView({
                             </div>
                             <h3 className="font-black text-white uppercase tracking-widest text-[11px]">Vault Notes</h3>
                           </div>
-                          {userRole === 'Admin' && (
-                            <button
-                              disabled={caseData.evidenceVaults[activeVaultIndex]?.moreProofRequested || !!caseData.evidenceVaults.find((v, idx) => {
-                                return idx < activeVaultIndex && !v.moreProofRequested;
-                              })}
-                              onClick={() => onRequestMoreProof(caseData.evidenceVaults[activeVaultIndex].id)}
-                              className={cn(
-                                "px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all",
-                                caseData.evidenceVaults[activeVaultIndex]?.moreProofRequested 
-                                  ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" 
-                                  : "bg-white/5 border border-border-standard text-text-tertiary hover:text-blue-400 hover:border-blue-500/30 active:scale-95"
-                              )}
-                            >
-                              {caseData.evidenceVaults[activeVaultIndex]?.moreProofRequested ? "Proof Requested" : "Request More Proof"}
-                            </button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {isVisualFailure && (
+                              <button
+                                type="button"
+                                onClick={onReevaluateCase}
+                                disabled={isReevaluatingCase || !canBackfillAudioDeconstruction}
+                                className={cn(
+                                  "px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all inline-flex items-center gap-2 border",
+                                  !isReevaluatingCase && canBackfillAudioDeconstruction
+                                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/40 active:scale-95"
+                                    : "bg-white/5 border-white/5 text-slate-500 cursor-not-allowed"
+                                )}
+                              >
+                                <RefreshCcw className={cn("w-3.5 h-3.5", isReevaluatingCase && "animate-spin")} />
+                                {isReevaluatingCase ? 'Retrying' : 'Retry Analytics'}
+                              </button>
+                            )}
+                            {userRole === 'Admin' && (
+                              <button
+                                disabled={caseData.evidenceVaults[activeVaultIndex]?.moreProofRequested || !!caseData.evidenceVaults.find((v, idx) => {
+                                  return idx < activeVaultIndex && !v.moreProofRequested;
+                                })}
+                                onClick={() => onRequestMoreProof(caseData.evidenceVaults[activeVaultIndex].id)}
+                                className={cn(
+                                  "px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all",
+                                  caseData.evidenceVaults[activeVaultIndex]?.moreProofRequested 
+                                    ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" 
+                                    : "bg-white/5 border border-border-standard text-text-tertiary hover:text-blue-400 hover:border-blue-500/30 active:scale-95"
+                                )}
+                              >
+                                {caseData.evidenceVaults[activeVaultIndex]?.moreProofRequested ? "Proof Requested" : "Request More Proof"}
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <p className="text-slate-300 text-sm leading-relaxed font-medium italic">
                           "{caseData.evidenceVaults[activeVaultIndex]?.notes || "No additional notes provided for this vault."}"
@@ -2047,6 +5172,164 @@ function CaseDetailView({
                       )}
                     </div>
                   </div>
+
+                  <section className="bg-slate-900 rounded-3xl p-8 border border-slate-800 shadow-sm">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-blue-900/20 flex items-center justify-center border border-blue-900/30">
+                          <Music className="w-4 h-4 text-blue-400" />
+                        </div>
+                        <div>
+                          <h3 className="font-black text-white uppercase tracking-widest text-[11px]">Audio Deconstruction</h3>
+                          <p className="mt-1 text-[11px] text-slate-400 font-medium">
+                            Demucs stem isolation for music-first review inside the forensic stream.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={onReevaluateCase}
+                          disabled={!canBackfillAudioDeconstruction || isReevaluatingCase}
+                          className={cn(
+                            "inline-flex items-center gap-2 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl border transition-all",
+                            canBackfillAudioDeconstruction && !isReevaluatingCase
+                              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/40 active:scale-95"
+                              : "bg-white/5 border-white/5 text-slate-500 cursor-not-allowed"
+                          )}
+                        >
+                          <RefreshCcw className={cn("w-3.5 h-3.5", isReevaluatingCase && "animate-spin")} />
+                          {isReevaluatingCase ? 'Re-evaluating' : (canBackfillAudioDeconstruction ? 'Re-evaluate Package' : 'Backend Required')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={onBackfillAudioDeconstruction}
+                          disabled={!canBackfillAudioDeconstruction || isBackfillingAudioDeconstruction}
+                          className={cn(
+                            "inline-flex items-center gap-2 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl border transition-all",
+                            canBackfillAudioDeconstruction && !isBackfillingAudioDeconstruction
+                              ? "bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/15 hover:border-blue-500/40 active:scale-95"
+                              : "bg-white/5 border-white/5 text-slate-500 cursor-not-allowed"
+                          )}
+                        >
+                          <RefreshCcw className={cn("w-3.5 h-3.5", isBackfillingAudioDeconstruction && "animate-spin")} />
+                          {isBackfillingAudioDeconstruction
+                            ? 'Running Demucs'
+                            : canBackfillAudioDeconstruction
+                              ? (caseData.audioDeconstruction?.status === 'completed' ? 'Rerun Demucs' : 'Run Demucs')
+                              : 'Backend Required'}
+                        </button>
+                        <span className={cn(
+                          "w-fit px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl",
+                          getDeconstructionStatusTone(caseData.audioDeconstruction?.status || 'unknown')
+                        )}>
+                          {caseData.audioDeconstruction ? caseData.audioDeconstruction.status : 'Not Available'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {caseData.audioDeconstruction ? (
+                      <div className="mt-6 space-y-6">
+                        <div className="flex flex-wrap gap-2">
+                          <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-white/5 border border-white/5 text-slate-300">
+                            {caseData.audioDeconstruction.provider || 'Demucs'}
+                          </span>
+                          {caseData.audioDeconstruction.model && (
+                            <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-white/5 border border-white/5 text-slate-300">
+                              {caseData.audioDeconstruction.model}
+                            </span>
+                          )}
+                          {caseData.audioDeconstruction.preferredStem && (
+                            <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                              Primary Stem: {formatStemLabel(caseData.audioDeconstruction.preferredStem)}
+                            </span>
+                          )}
+                          {caseData.audioDeconstruction.fingerprintStem && (
+                            <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                              Fingerprint: {formatStemLabel(caseData.audioDeconstruction.fingerprintStem)}
+                            </span>
+                          )}
+                          {caseData.audioDeconstruction.peakSelectionStem && (
+                            <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                              Peak Scan: {formatStemLabel(caseData.audioDeconstruction.peakSelectionStem)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="rounded-2xl border border-white/5 bg-slate-950/60 p-5">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Process Notes</p>
+                          <p className="text-sm text-slate-300 leading-relaxed">
+                            {caseData.audioDeconstruction.summary || 'Audio deconstruction completed without a stored narrative summary.'}
+                          </p>
+                          {caseData.audioDeconstruction.error && (
+                            <p className="mt-3 text-[12px] text-red-400 font-medium">
+                              {caseData.audioDeconstruction.error}
+                            </p>
+                          )}
+                        </div>
+
+                        {orderedAudioArtifacts.length > 0 ? (
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                            {orderedAudioArtifacts.map((artifact) => {
+                              const isPreferred = artifact.stem === caseData.audioDeconstruction?.preferredStem;
+                              const isFingerprintStem = artifact.stem === caseData.audioDeconstruction?.fingerprintStem;
+                              const isPeakStem = artifact.stem === caseData.audioDeconstruction?.peakSelectionStem;
+
+                              return (
+                                <div key={artifact.assetId} className="rounded-2xl border border-white/5 bg-slate-950/60 p-5">
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Separated Stem</p>
+                                      <p className="mt-2 text-lg font-black text-white">{formatStemLabel(artifact.stem)}</p>
+                                    </div>
+                                    <a
+                                      href={artifact.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="w-10 h-10 rounded-xl bg-white/[0.03] flex items-center justify-center border border-white/5 text-slate-400 hover:text-blue-400 hover:border-blue-500/30 transition-colors"
+                                      title={`Open ${formatStemLabel(artifact.stem)}`}
+                                    >
+                                      <ExternalLink className="w-4 h-4" />
+                                    </a>
+                                  </div>
+
+                                  <div className="mt-4 flex flex-wrap gap-2">
+                                    {isPreferred && (
+                                      <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-widest rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                                        Master Review
+                                      </span>
+                                    )}
+                                    {isFingerprintStem && (
+                                      <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-widest rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                                        Song Match
+                                      </span>
+                                    )}
+                                    {isPeakStem && (
+                                      <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-widest rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                                        Peak Select
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <audio controls preload="none" className="mt-4 w-full">
+                                    <source src={artifact.url} type={artifact.mimeType || 'audio/wav'} />
+                                  </audio>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/50 px-4 py-5 text-sm text-slate-400">
+                            No separated stem artifacts were attached to this evidence package.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-6 rounded-2xl border border-dashed border-white/10 bg-slate-950/50 px-4 py-5 text-sm text-slate-400">
+                        No audio deconstruction is attached to this evidence package yet. Once the Demucs-backed forensic pass runs for the submission, the music stem and related artifacts will appear here.
+                      </div>
+                    )}
+                  </section>
 
                   {/* Vault Images */}
                   {caseData.evidenceVaults[activeVaultIndex]?.images.length > 0 && (
@@ -3738,7 +7021,7 @@ function LitigationDashboard({
                         </div>
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded bg-slate-950 flex items-center justify-center border border-white/5 text-[12px] font-black text-slate-400">
-                            {currentCase.assignedTo?.split(' ')[1][0] || 'L'}
+                            {getPersonInitial(currentCase.assignedTo, 'L')}
                           </div>
                           <div>
                             <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Assigned Counsel</p>
@@ -4232,7 +7515,8 @@ function generateLegalNotice(caseData: Case, dossier: any, template: typeof LEGA
     header = "SETTLEMENT OFFER & RELEASE OF LIABILITY";
     body = "In the interest of resolving this matter without costly litigation, we are prepared to offer a one-time settlement release upon payment of the demanded sum.";
   } else {
-    body = `This formal notice is issued regarding the unauthorized public performance of copyrighted musical works at your establishment. Our forensic systems have verified an infraction on ${format(caseData.timestamp, 'PPPP')} at ${format(caseData.timestamp, 'p')}.`;
+    const mandateProfile = getViolationMandateProfile(caseData);
+    body = `This formal notice is issued regarding unauthorized ${mandateProfile.label.toLowerCase()} at your establishment. Our forensic systems have verified an infraction on ${format(caseData.timestamp, 'PPPP')} at ${format(caseData.timestamp, 'p')}.`;
   }
   
   return `${header}
@@ -4327,9 +7611,9 @@ function AssignmentCard({ caseData, onSelectCase, onUpdateStage, setActiveTab, o
           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Assigned To</p>
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-black text-white">
-              {caseData.assignedTo?.split(' ')[1][0]}
+              {getPersonInitial(caseData.assignedTo)}
             </div>
-            <p className="text-sm font-bold text-white">{caseData.assignedTo}</p>
+            <p className="text-sm font-bold text-white">{caseData.assignedTo || 'Unassigned'}</p>
           </div>
         </div>
 
@@ -4360,7 +7644,7 @@ function AssignmentCard({ caseData, onSelectCase, onUpdateStage, setActiveTab, o
             <p className="text-xs text-slate-300 leading-relaxed italic mb-2">"{caseData.agentResolutionNote}"</p>
             <div className="flex items-center gap-2 pt-2 border-t border-emerald-900/20">
               <div className="w-5 h-5 rounded-full bg-cyan-600 flex items-center justify-center text-[8px] font-black text-white">
-                {caseData.resolvedByAgentName?.split(' ')[1][0] || 'A'}
+                {getPersonInitial(caseData.resolvedByAgentName, 'A')}
               </div>
               <span className="text-[10px] font-bold text-slate-400">Verified by {caseData.resolvedByAgentName || 'Field Agent'}</span>
             </div>

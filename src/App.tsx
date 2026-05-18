@@ -836,7 +836,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-slate-950 text-slate-100 font-sans">
+    <div className="flex h-dvh min-h-0 w-full bg-slate-950 text-slate-100 font-sans">
       {/* Major Notifications Overlay */}
       <div className="fixed top-10 right-10 z-[200] space-y-4 pointer-events-none">
         <AnimatePresence>
@@ -873,7 +873,7 @@ export default function App() {
       </div>
 
       {/* Sidebar */}
-      <aside className="w-16 md:w-64 border-r border-slate-800 flex flex-col bg-slate-900/50">
+      <aside className="w-16 md:w-64 border-r border-slate-800 flex min-h-0 flex-col bg-slate-900/50">
         <div className="p-6 flex items-center gap-3">
           <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
             <Shield className="text-white w-5 h-5" />
@@ -963,7 +963,7 @@ export default function App() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
+      <main className="min-h-0 flex-1 flex flex-col overflow-hidden relative">
         <AnimatePresence mode="wait">
           <motion.div
             key={`${activeScreen}-${activeTab}`}
@@ -971,7 +971,7 @@ export default function App() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 1.01, y: -5 }}
             transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
-            className="flex-1 flex flex-col overflow-hidden"
+            className="min-h-0 flex-1 flex flex-col overflow-hidden"
           >
             {activeScreen === 'agent' ? (
               <AgentProofGapWorkspace

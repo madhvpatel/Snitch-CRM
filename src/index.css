@@ -88,3 +88,52 @@
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-standard);
 }
+
+@media (max-width: 767px) {
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .crm-shell {
+    min-height: 100dvh;
+    height: auto;
+    flex-direction: column;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .crm-shell > aside {
+    width: 100%;
+    min-height: auto;
+    flex-shrink: 0;
+    border-right: 0;
+    border-bottom: 1px solid rgb(30 41 59);
+  }
+
+  .crm-shell > aside nav {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    padding-bottom: 0.75rem;
+  }
+
+  .crm-shell > main,
+  .crm-shell > main > div,
+  .crm-shell > main > div > div,
+  .crm-shell > main > div > div > main {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .crm-shell > main > div > div > aside,
+  .crm-shell > main > div > div > section {
+    max-height: none;
+    overflow: visible;
+  }
+}

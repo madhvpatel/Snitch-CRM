@@ -836,7 +836,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-dvh min-h-0 w-full bg-slate-950 text-slate-100 font-sans">
+    <div className="crm-shell flex h-dvh min-h-0 w-full bg-slate-950 text-slate-100 font-sans">
       {/* Major Notifications Overlay */}
       <div className="fixed top-10 right-10 z-[200] space-y-4 pointer-events-none">
         <AnimatePresence>

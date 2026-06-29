@@ -796,7 +796,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 20, scale: 0.95 }}
               className={cn(
-                "p-6 rounded-[24px] border shadow-2xl backdrop-blur-xl pointer-events-auto min-w-[320px]",
+                "p-6 rounded-[24px] border shadow-2xl backdrop-blur-xl pointer-events-auto min-w-[280px] md:min-w-[320px] max-w-[calc(100vw-3rem)]",
                 notif.type === 'major' 
                   ? "bg-brand-indigo/10 border-brand-indigo/30 text-brand-indigo shadow-brand-indigo/20" 
                   : "bg-white/5 border-white/10 text-text-primary shadow-black/40"
@@ -3388,7 +3388,7 @@ function AuthorityVenueEvidencePage({
           </div>
         </div>
 
-        <div className="max-h-[calc(100vh-15.5rem)] overflow-y-auto">
+        <div className="max-h-[calc(100dvh - 15.5rem)] overflow-y-auto">
           {venueCases.map((caseData) => {
             const caseProfile = getDecisionProfile(caseData);
             return (
@@ -3894,7 +3894,7 @@ function AuthorityCaseFactsRail({
         <p className="mb-3 font-mono text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">Case fields</p>
         <div className="overflow-hidden rounded-md border border-white/10">
           {fields.map(([label, value]) => (
-            <div key={label} className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-white/10 px-3 py-3 last:border-b-0">
+            <div key={label} className="grid grid-cols-1 md:grid-cols-[120px_minmax(0,1fr)] border-b border-white/10 px-3 py-3 last:border-b-0 gap-1 md:gap-0">
               <p className="text-xs font-medium text-slate-500">{label}</p>
               <p className="truncate text-sm font-bold text-slate-200">{value}</p>
             </div>
@@ -4024,7 +4024,7 @@ function AuthorityDecisionCockpit({
             <span className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] font-black text-slate-300">{prioritizedCases.length} cases</span>
           </div>
         </div>
-        <div className="max-h-[calc(100vh-12rem)] overflow-y-auto">
+        <div className="max-h-[calc(100dvh - 12rem)] overflow-y-auto">
           {prioritizedCases.length === 0 ? (
             <div className="p-5">
               <PanelState type="empty" message="No active cases available." />
@@ -4542,7 +4542,7 @@ function VenueResolutionQueue({ cases, onSelectCase }: { cases: Case[]; onSelect
             ))}
           </div>
         </div>
-        <div className="max-h-[calc(100vh-11rem)] overflow-y-auto">
+        <div className="max-h-[calc(100dvh - 11rem)] overflow-y-auto">
           {rows.length === 0 ? (
             <div className="p-6">
               <PanelState type="empty" message="No unresolved or approximate venue captures match this filter." />
@@ -4623,7 +4623,7 @@ function VenueResolutionDetail({ caseData, workflow, onOpenCase }: { caseData: C
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
           {coordinates ? (
-            <MapContainer center={[coordinates.lat, coordinates.lng]} zoom={15} className="h-[420px] w-full">
+            <MapContainer center={[coordinates.lat, coordinates.lng]} zoom={15} className="h-[300px] md:h-[420px] w-full">
               <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               <Marker position={[coordinates.lat, coordinates.lng]}>
                 <Popup>Capture coordinates</Popup>
@@ -6021,7 +6021,7 @@ function CaseDetailView({
             </div>
             
             <div>
-              <h1 className="text-h1 text-text-primary tracking-tight mb-2 leading-none">{caseData.location.name}</h1>
+              <h1 className="text-2xl md:text-h1 text-text-primary tracking-tight mb-2 leading-tight md:leading-none" style={{ textWrap: 'balance' }}>{caseData.location.name}</h1>
               <div className="flex items-center gap-4">
                 <p className="text-text-tertiary text-sm flex items-center gap-2 font-medium">
                   <MapPin className="w-4 h-4 text-text-quaternary" />

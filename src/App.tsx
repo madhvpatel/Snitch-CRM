@@ -6212,18 +6212,19 @@ function CaseDetailView({
         <RawAnalysisPanel caseData={caseData} />
 
         {/* Detail Tabs */}
-        <motion.div variants={itemVariants} className="flex border-b border-slate-800 gap-8 items-center">
+        <motion.div variants={itemVariants} className="flex border-b border-slate-800 gap-6 items-center overflow-x-auto">
           {caseData.evidenceVaults.map((vault, idx) => (
-            <div key={vault.id} className="relative flex items-center group">
-              <button 
+            <div key={vault.id} className="relative flex items-center group shrink-0">
+              <button
                 onClick={() => handleTabChange(`evidence-${idx}`)}
                 className={cn(
-                  "pb-4 text-[11px] font-black uppercase tracking-widest transition-all relative pr-6",
+                  "pb-4 text-[11px] font-black uppercase tracking-widest transition-all relative px-1 flex items-center gap-2",
                   activeDetailTab === `evidence-${idx}` ? "text-blue-400" : "text-slate-500 hover:text-slate-300"
                 )}
               >
+                {vault.videoUrl ? <Video className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
                 {vault.name}
-                {activeDetailTab === `evidence-${idx}` && <motion.div layoutId="detailTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />}
+                {activeDetailTab === `evidence-${idx}` && <motion.div layoutId="detailTab" className="absolute bottom-0 left-0 right-0 h-1 bg-blue-500 rounded-t" />}
               </button>
               {userRole === 'Admin' && !isEvidenceLocked && (
                 <button 
@@ -6305,7 +6306,7 @@ function CaseDetailView({
             {activeDetailTab.startsWith('evidence-') ? (
               <>
                 {/* Vault Content */}
-                <section className="space-y-8">
+                <section className="space-y-8 rounded-2xl border border-border-subtle bg-white/[0.01] p-8">
                   <div className="flex items-center justify-between">
                     <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em]">
                       {caseData.evidenceVaults[activeVaultIndex]?.name} Assets
@@ -6443,31 +6444,41 @@ function CaseDetailView({
                     </div>
 
                     {caseData.audioDeconstruction ? (
-                      <div className="mt-6 space-y-6">
-                        <div className="flex flex-wrap gap-2">
-                          <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-white/5 border border-white/5 text-slate-300">
-                            {caseData.audioDeconstruction.provider || 'Demucs'}
-                          </span>
-                          {caseData.audioDeconstruction.model && (
-                            <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-white/5 border border-white/5 text-slate-300">
-                              {caseData.audioDeconstruction.model}
-                            </span>
-                          )}
-                          {caseData.audioDeconstruction.preferredStem && (
-                            <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                              Primary Stem: {formatStemLabel(caseData.audioDeconstruction.preferredStem)}
-                            </span>
-                          )}
-                          {caseData.audioDeconstruction.fingerprintStem && (
-                            <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                              Fingerprint: {formatStemLabel(caseData.audioDeconstruction.fingerprintStem)}
-                            </span>
-                          )}
-                          {caseData.audioDeconstruction.peakSelectionStem && (
-                            <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
-                              Peak Scan: {formatStemLabel(caseData.audioDeconstruction.peakSelectionStem)}
-                            </span>
-                          )}
+                      <div className="mt-8 space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Processing Method</p>
+                            <div className="flex flex-wrap gap-2">
+                              <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-white/5 border border-white/5 text-slate-300">
+                                {caseData.audioDeconstruction.provider || 'Demucs'}
+                              </span>
+                              {caseData.audioDeconstruction.model && (
+                                <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-white/5 border border-white/5 text-slate-300">
+                                  {caseData.audioDeconstruction.model}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Selected Stems</p>
+                            <div className="flex flex-wrap gap-2">
+                              {caseData.audioDeconstruction.preferredStem && (
+                                <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                                  Primary: {formatStemLabel(caseData.audioDeconstruction.preferredStem)}
+                                </span>
+                              )}
+                              {caseData.audioDeconstruction.fingerprintStem && (
+                                <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                                  Match: {formatStemLabel(caseData.audioDeconstruction.fingerprintStem)}
+                                </span>
+                              )}
+                              {caseData.audioDeconstruction.peakSelectionStem && (
+                                <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                                  Peak: {formatStemLabel(caseData.audioDeconstruction.peakSelectionStem)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
                         <div className="rounded-2xl border border-white/5 bg-slate-950/60 p-5">
@@ -6559,29 +6570,32 @@ function CaseDetailView({
               </>
             ) : activeDetailTab === 'custody' ? (
               <section className="bg-slate-900 rounded-[40px] p-10 border border-slate-800 shadow-sm">
-                <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] mb-10">Forensic Chain of Custody</h3>
+                <div className="mb-8">
+                  <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] mb-2">Forensic Chain of Custody</h3>
+                  <p className="text-[9px] text-slate-600">Complete audit trail of evidence handling and verification</p>
+                </div>
                 <div className="bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-900 border-b border-slate-800">
-                        <th className="px-6 py-4 text-[9px] font-black text-slate-500 uppercase tracking-widest">Timestamp</th>
-                        <th className="px-6 py-4 text-[9px] font-black text-slate-500 uppercase tracking-widest">Event</th>
-                        <th className="px-6 py-4 text-[9px] font-black text-slate-500 uppercase tracking-widest">Actor</th>
-                        <th className="px-6 py-4 text-[9px] font-black text-slate-500 uppercase tracking-widest">Device ID</th>
-                        <th className="px-6 py-4 text-[9px] font-black text-slate-500 uppercase tracking-widest">Status</th>
+                      <tr className="bg-slate-900/80 border-b border-slate-800">
+                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Timestamp</th>
+                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Event</th>
+                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Actor</th>
+                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Device</th>
+                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800">
                       {caseData.chainOfCustody.map((entry, idx) => (
-                        <tr key={idx} className="hover:bg-white/[0.01] transition-colors">
-                          <td className="px-6 py-4 text-[10px] font-mono text-slate-400">{format(new Date(entry.timestamp), 'yyyy-MM-dd HH:mm:ss')}</td>
-                          <td className="px-6 py-4 text-[11px] font-bold text-white">{entry.event}</td>
-                          <td className="px-6 py-4 text-[10px] font-black text-blue-400 uppercase tracking-widest">{entry.actor}</td>
-                          <td className="px-6 py-4 text-[10px] font-mono text-slate-500">{entry.deviceId}</td>
+                        <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="px-6 py-4 text-[10px] font-mono text-slate-400">{format(new Date(entry.timestamp), 'MM-dd HH:mm:ss')}</td>
+                          <td className="px-6 py-4 text-[11px] font-bold text-slate-100">{entry.event}</td>
+                          <td className="px-6 py-4 text-[10px] font-black text-blue-300 uppercase tracking-widest">{entry.actor}</td>
+                          <td className="px-6 py-4 text-[9px] font-mono text-slate-500">{entry.deviceId}</td>
                           <td className="px-6 py-4">
                             <span className={cn(
-                              "px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border",
-                              entry.status === 'Verified' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"
+                              "px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border",
+                              entry.status === 'Verified' ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" : "bg-red-500/10 text-red-300 border-red-500/30"
                             )}>
                               {entry.status}
                             </span>
@@ -6594,7 +6608,10 @@ function CaseDetailView({
               </section>
             ) : activeDetailTab === 'audit' ? (
               <section className="bg-slate-900 rounded-[40px] p-10 border border-slate-800 shadow-sm">
-                <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] mb-10">Status Audit Trail</h3>
+                <div className="mb-8">
+                  <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] mb-2">Status Audit Trail</h3>
+                  <p className="text-[9px] text-slate-600">Complete history of case status changes and decisions</p>
+                </div>
                 <div className="space-y-8">
                   {[...caseData.auditTrail].sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime()).map((entry) => (
                     <div key={entry.id} className="flex gap-6">

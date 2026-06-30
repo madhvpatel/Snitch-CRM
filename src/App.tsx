@@ -4147,7 +4147,7 @@ function AuthorityDecisionCockpit({
             </div>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto min-h-0">
           {prioritizedCases.length === 0 ? (
             <div className="p-5">
               <PanelState type="empty" message="No active cases available." />

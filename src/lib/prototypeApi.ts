@@ -232,7 +232,8 @@ const hydrateCase = (caseData: Partial<Case> & { timestamp?: string | Date }): C
   // Generate fallback recoverableValue if not provided by API
   let recoverableValue = toNumber(caseData.recoverableValue);
   if (recoverableValue === 0 && !caseData.recoverableValue) {
-    const seedValue = (caseData.id || '').charCodeAt(caseData.id?.length || 0);
+    const idStr = caseData.id || '';
+    const seedValue = idStr.charCodeAt(idStr.length - 1) || 0;
     recoverableValue = 30000 + ((seedValue % 180) * 1000);
   }
 

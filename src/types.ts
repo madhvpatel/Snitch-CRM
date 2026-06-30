@@ -1,4 +1,4 @@
-export type CaseStage = 'New' | 'Under Review' | 'Agent Assignment' | 'Ready For Legal' | 'Recovery In Progress' | 'Closed';
+export type CaseStage = 'New' | 'Monitor / Enrich' | 'Bad Case' | 'Under Review' | 'Agent Assignment' | 'Ready For Legal' | 'Recovery In Progress' | 'Closed';
 
 export type UserRole = 'Admin' | 'Lawyer' | 'Agent';
 
@@ -10,6 +10,10 @@ export interface AuditEntry {
   previousStage?: CaseStage;
   newStage?: CaseStage;
   details?: string;
+  eventType?: string;
+  summary?: string;
+  previousValue?: string;
+  newValue?: string;
 }
 
 export interface Comment {
@@ -61,6 +65,24 @@ export interface AudioDeconstruction {
   summary?: string;
   error?: string | null;
   artifacts: AudioDeconstructionArtifact[];
+}
+
+export interface SourceAssessment {
+  sourceClass?: 'likely_pa_system' | 'likely_small_speaker' | 'likely_personal_device' | 'inconclusive' | string | null;
+  score?: number | null;
+  confidence?: number | null;
+  classifierMode?: string | null;
+  requestedMode?: string | null;
+  explanation?: string[] | string | null;
+  analystNote?: string | null;
+  signals?: Record<string, unknown> | null;
+}
+
+export interface SignalSummary {
+  sourceClass?: string | null;
+  sourceScore?: number | null;
+  sourceConfidence?: number | null;
+  classifierMode?: string | null;
 }
 
 export interface LocationDelta {
@@ -129,6 +151,188 @@ export interface VenueContext {
   } | null;
 }
 
+export type ReadinessBand =
+  | 'INSUFFICIENT_EVIDENCE'
+  | 'MONITOR_ENRICH'
+  | 'CASE_CANDIDATE'
+  | 'ESCALATION_READY'
+  | 'LITIGATION_READY';
+
+export type LicenseStatus =
+  | 'UNKNOWN'
+  | 'MANUAL_REVIEW_REQUIRED'
+  | 'UNLICENSED'
+  | 'LICENSED'
+  | 'EXEMPT'
+  | 'NOT_REQUIRED';
+
+export type VenueIdentityStatus = 'RESOLVED' | 'APPROXIMATE' | 'UNRESOLVED';
+
+export interface ReadinessReason {
+  code: string;
+  displayText: string;
+  severity?: 'blocking' | 'warning' | 'info';
+}
+
+export interface ReadinessAction {
+  code: string;
+  displayText: string;
+}
+
+export interface ReadinessState {
+  score: number;
+  band: ReadinessBand;
+  bandDisplayLabel: string;
+  reasons: ReadinessReason[];
+  nextActions: ReadinessAction[];
+}
+
+export interface LitigationEligibilityState {
+  canSendToLitigation: boolean;
+  blockingReasons: ReadinessReason[];
+  checkedAt?: string;
+}
+
+export interface LicenseGateState {
+  status: LicenseStatus;
+  source?: string;
+  checkedAt?: string;
+  checkedBy?: string;
+  manualAttestationStatus?: 'NOT_ATTESTED' | 'ATTESTED' | 'REJECTED';
+  registryLookupReference?: string;
+  resolutionWorkflowUrl?: string;
+}
+
+export interface ProsecutionStrengthState {
+  score: number;
+  label: string;
+  reasons: ReadinessReason[];
+  incidentPattern: 'single_incident' | 'repeat_pattern';
+}
+
+export interface IncidentTimelineEntry {
+  id: string;
+  capturedAt: string;
+  detectedSong: string;
+  evidenceConfidence: number;
+  hasForensicArtifacts: boolean;
+  status: string;
+  sourceLocation: string;
+}
+
+export interface RepeatCaptureSummary {
+  confirmedIncidentCount: number;
+  distinctCaptureDates: number;
+  distinctDetectedSongs: number;
+  firstDetectedAt?: string;
+  latestDetectedAt?: string;
+}
+
+export interface VenueIdentityState {
+  status: VenueIdentityStatus;
+  displayLabel: string;
+  coordinates?: { lat: number; lng: number };
+  candidateVenueCount?: number;
+  bestCandidateConfidence?: number;
+  assignmentStatus?: string;
+  followUpStatus?: string;
+}
+
+export interface EnforcementWorkflowState {
+  readiness?: ReadinessState;
+  litigationEligibility?: LitigationEligibilityState;
+  licenseGate?: LicenseGateState;
+  prosecutionStrength?: ProsecutionStrengthState;
+  incidentTimeline?: IncidentTimelineEntry[];
+  repeatCaptureSummary?: RepeatCaptureSummary;
+  venueIdentity?: VenueIdentityState;
+}
+
+export interface CaseResolutionState {
+  status?: 'resolved' | 'unresolved' | 'pending_analyst_review' | string | null;
+  owner?: 'pipeline' | 'analyst' | string | null;
+  reason?: string | null;
+  resolved_value?: unknown;
+  resolved_at?: string | null;
+  [key: string]: unknown;
+}
+
+export interface CaseLicenseVerdict {
+  status?: string | null;
+  reason?: string | null;
+  [key: string]: unknown;
+}
+
+export interface CaseCrmReadiness {
+  is_case_ready?: boolean;
+  case_model?: string | null;
+  case_grouping_key?: string | null;
+  missing_resolution_fields?: string[];
+  analyst_required_actions?: string[];
+  [key: string]: unknown;
+}
+
+export interface CaseReviewBrief {
+  one_line?: string | null;
+  [key: string]: unknown;
+}
+
+// One line of the deterministic, templated case story (see server's
+// buildCaseNarrative — every line reads a real structured field, never an
+// LLM call, so it can't drift from the underlying facts).
+export interface CaseNarrativeLine {
+  id: string;
+  tone: 'green' | 'amber' | 'red' | 'grey';
+  label: string;
+  text: string;
+  blockers?: string[];
+}
+
+export interface CaseVenueDelta {
+  flagged: boolean;
+  userSelectedVenue?: string | null;
+  systemRecommendedVenue?: string | null;
+  severity?: string | null;
+  basis?: string | null;
+  note?: string | null;
+}
+
+export interface CaseContract {
+  processing_stage?: string | null;
+  space_class?: string | null;
+  license_verdict?: CaseLicenseVerdict | null;
+  crm_readiness?: CaseCrmReadiness | null;
+  ai_review_brief?: CaseReviewBrief | null;
+  venue_delta?: CaseVenueDelta | null;
+  narrative?: CaseNarrativeLine[] | null;
+  resolutions?: {
+    matched_track?: CaseResolutionState | null;
+    venue?: CaseResolutionState | null;
+    rights_owner?: CaseResolutionState | null;
+    merchant?: CaseResolutionState | null;
+    [key: string]: CaseResolutionState | null | undefined;
+  };
+}
+
+// Full raw Phase 2 analysis. Loosely typed on purpose — the server emits the
+// complete pipeline output (forensic summary, source/visual/application
+// analysis, signage OCR + peak windows nested in visual_analysis, venue
+// resolution review, declared-vs-detected reconciliation). Structure these into
+// dedicated typed shapes as the frontend renders each one.
+export interface CaseAnalysis {
+  processing_stage?: string | null;
+  forensic_summary?: unknown;
+  source_analysis?: unknown;
+  visual_analysis?: unknown;
+  application_assessment?: unknown;
+  venue_resolution_review?: unknown;
+  context_reconciliation?: unknown;
+  ai_review_brief?: CaseReviewBrief | null;
+  license_verdict?: CaseLicenseVerdict | null;
+  space_class?: string | null;
+  [key: string]: unknown;
+}
+
 export interface Case {
   id: string;
   isNew: boolean;
@@ -156,6 +360,8 @@ export interface Case {
     clockSkewDetection: boolean;
     geofencingContinuity: boolean;
     deviceTrustBand: boolean;
+    gpsTrackSigned?: boolean;
+    venueCommitted?: boolean;
   };
   
   songAssessment: {
@@ -175,10 +381,18 @@ export interface Case {
   };
 
   audioDeconstruction?: AudioDeconstruction | null;
+  sourceAssessment?: SourceAssessment | null;
+  signalSummary?: SignalSummary | null;
   locationDelta?: LocationDelta | null;
   venueAttribution?: VenueAttribution | null;
   venueContext?: VenueContext | null;
-  
+  enforcement?: EnforcementWorkflowState | null;
+  contract?: CaseContract | null;
+  // Full raw Phase 2 analysis passthrough from the server. Shapes are
+  // intentionally loose for now — surface everything, structure it later as the
+  // frontend is built out. Null until advanced processing has run.
+  analysis?: CaseAnalysis | null;
+
   evidenceVaults: EvidenceVault[];
   selectedVaultIds?: string[];
   
@@ -186,6 +400,12 @@ export interface Case {
   
   stage: CaseStage;
   qualityScore: number;
+  qualityScore10?: number;
+  scoreScale?: '1-10' | string;
+  venueSourceConfidence?: number | null;
+  songEnforcementConfidence?: number | null;
+  enforcementBlockReason?: string | null;
+  badCaseReasons?: string[];
   recoverableValue: number;
   
   // Assignment Data

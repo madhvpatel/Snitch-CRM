@@ -4081,6 +4081,43 @@ function AuthorityDecisionCockpit({
             <span className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] font-black text-slate-300">{prioritizedCases.length} cases</span>
           </div>
         </div>
+        {selectedIds.size > 0 && (
+          <div className="border-t border-white/10 bg-blue-500/10 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-black text-blue-300">{selectedIds.size} case{selectedIds.size !== 1 ? 's' : ''} selected</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    selectedIds.forEach(id => {
+                      onUpdateStage(id, 'Under Review', 'Bulk action: moved to Under Review');
+                    });
+                    setSelectedIds(new Set());
+                  }}
+                  className="px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-blue-500/20 border border-blue-500/40 text-blue-300 hover:bg-blue-500/30 transition-all"
+                >
+                  Review
+                </button>
+                <button
+                  onClick={() => {
+                    selectedIds.forEach(id => {
+                      onUpdateStage(id, 'Agent Assignment', 'Bulk action: assigned to agent');
+                    });
+                    setSelectedIds(new Set());
+                  }}
+                  className="px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 transition-all"
+                >
+                  Assign
+                </button>
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-white/5 border border-white/10 text-slate-400 hover:text-slate-200 transition-all"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="max-h-[calc(100dvh - 12rem)] overflow-y-auto">
           {prioritizedCases.length === 0 ? (
             <div className="p-5">

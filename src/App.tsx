@@ -4040,7 +4040,7 @@ function AuthorityDecisionCockpit({
 
   return (
     <div className="grid h-full grid-cols-[340px_minmax(0,1fr)_360px] overflow-hidden bg-[#09090b] text-slate-100 max-2xl:grid-cols-[340px_minmax(0,1fr)] max-xl:grid-cols-1 max-xl:overflow-y-auto">
-      <aside className="border-r border-white/10 bg-[#0d0d0f] max-xl:border-r-0">
+      <aside className="border-r border-white/10 bg-[#0d0d0f] max-xl:border-r-0 flex flex-col">
         <div className="border-b border-white/10 p-5">
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-[#141417] text-sky-200">
@@ -4147,7 +4147,7 @@ function AuthorityDecisionCockpit({
             </div>
           </div>
         )}
-        <div className="max-h-[calc(100dvh - 12rem)] overflow-y-auto">
+        <div className="flex-1 overflow-y-auto">
           {prioritizedCases.length === 0 ? (
             <div className="p-5">
               <PanelState type="empty" message="No active cases available." />
@@ -4173,38 +4173,40 @@ function AuthorityDecisionCockpit({
                   }
                 }}
                 className={cn(
-                  "w-full border-b border-white/10 px-5 py-5 text-left transition-colors hover:bg-white/[0.03] flex items-center gap-3",
+                  "w-full border-b border-white/10 px-5 py-5 text-left transition-colors hover:bg-white/[0.03]",
                   selectedCase.id === caseData.id && !selectedIds.has(caseData.id) && "bg-white/[0.06]",
                   selectedIds.has(caseData.id) && "bg-blue-500/10 border-blue-500/30"
                 )}
               >
-                {selectedIds.size > 0 && (
-                  <div className="flex items-center">
+                <div className="flex items-start gap-3">
+                  {selectedIds.size > 0 && (
                     <div className={cn(
-                      "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
+                      "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 mt-0.5",
                       selectedIds.has(caseData.id)
                         ? "bg-blue-500 border-blue-500"
                         : "border-slate-600"
                     )}>
                       {selectedIds.has(caseData.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
                     </div>
-                  </div>
-                )}
-                <div className="flex-1 mb-3 flex items-center justify-between gap-3">
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-500">{caseData.id}</span>
-                  <div className="flex flex-wrap justify-end gap-1.5">
-                    <span className={cn("rounded-md border px-2.5 py-1 font-mono text-[9px] font-black", toneClasses[rowProfile.tone])}>
-                      {rowProfile.action}
-                    </span>
-                  </div>
-                </div>
-                <h3 className="text-sm font-black text-white">{caseData.location.name}</h3>
-                <p className="mt-1 truncate text-xs text-slate-500">{caseData.songAssessment.title} · {caseData.location.city}</p>
-                <div className="mt-4 flex items-end justify-between gap-3">
-                  <p className="text-xs font-bold text-slate-400">{rowProfile.blocker}</p>
-                  <div className="text-right">
-                    <p className="text-sm font-black text-white">{trackIdentityLabel(caseData)}</p>
-                    <p className="font-mono text-[9px] font-bold uppercase tracking-widest text-slate-600">track</p>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-500">{caseData.id}</span>
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        <span className={cn("rounded-md border px-2.5 py-1 font-mono text-[9px] font-black", toneClasses[rowProfile.tone])}>
+                          {rowProfile.action}
+                        </span>
+                      </div>
+                    </div>
+                    <h3 className="text-sm font-black text-white">{caseData.location.name}</h3>
+                    <p className="mt-1 truncate text-xs text-slate-500">{caseData.songAssessment.title} · {caseData.location.city}</p>
+                    <div className="mt-3 flex items-end justify-between gap-3">
+                      <p className="text-xs font-bold text-slate-400">{rowProfile.blocker}</p>
+                      <div className="text-right">
+                        <p className="text-sm font-black text-white">{trackIdentityLabel(caseData)}</p>
+                        <p className="font-mono text-[9px] font-bold uppercase tracking-widest text-slate-600">track</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </button>

@@ -3952,15 +3952,6 @@ function AuthorityDecisionCockpit({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkActionStage, setBulkActionStage] = useState<CaseStage | null>(null);
 
-  // Calculate metrics for filtered cases
-  const filteredMetrics = useMemo(() => {
-    const totalValue = prioritizedCases.reduce((sum, c) => sum + c.recoverableValue, 0);
-    const avgQuality = prioritizedCases.length > 0
-      ? Math.round(prioritizedCases.reduce((sum, c) => sum + c.qualityScore, 0) / prioritizedCases.length)
-      : 0;
-    return { totalValue, avgQuality };
-  }, [prioritizedCases]);
-
   const prioritizedCases = useMemo(() => {
     let filtered = [...cases]
       .filter((caseData) => caseData.stage !== 'Closed')
@@ -3987,6 +3978,16 @@ function AuthorityDecisionCockpit({
 
     return filtered;
   }, [cases, searchQuery, qualityFilter]);
+
+  // Calculate metrics for filtered cases
+  const filteredMetrics = useMemo(() => {
+    const totalValue = prioritizedCases.reduce((sum, c) => sum + c.recoverableValue, 0);
+    const avgQuality = prioritizedCases.length > 0
+      ? Math.round(prioritizedCases.reduce((sum, c) => sum + c.qualityScore, 0) / prioritizedCases.length)
+      : 0;
+    return { totalValue, avgQuality };
+  }, [prioritizedCases]);
+
   const selectedCase = prioritizedCases.find((caseData) => caseData.id === selectedCaseId) || prioritizedCases[0] || cases[0];
   const venueCases = useMemo(() => (
     [...cases]

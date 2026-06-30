@@ -4215,7 +4215,7 @@ function AuthorityDecisionCockpit({
         </div>
       </aside>
 
-      <main className="overflow-y-auto">
+      <main className="overflow-y-auto h-full">
         <AuthorityConsoleMetrics
           selectedCase={selectedCase}
           venueCases={venueCases}

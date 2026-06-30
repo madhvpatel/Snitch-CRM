@@ -4041,7 +4041,7 @@ function AuthorityDecisionCockpit({
 
   return (
     <div className="grid h-full grid-cols-[340px_minmax(0,1fr)_360px] overflow-hidden bg-[#09090b] text-slate-100 max-2xl:grid-cols-[340px_minmax(0,1fr)] max-xl:grid-cols-1 max-xl:overflow-y-auto">
-      <aside className="border-r border-white/10 bg-[#0d0d0f] max-xl:border-r-0 flex flex-col h-full">
+      <aside className="border-r border-white/10 bg-[#0d0d0f] max-xl:border-r-0 flex flex-col h-full overflow-hidden">
         <div className="border-b border-white/10 p-5">
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-[#141417] text-sky-200">

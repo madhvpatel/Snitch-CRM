@@ -66,7 +66,8 @@ import {
   ChevronDown,
   Info,
   Route,
-  Building2
+  Building2,
+  HelpCircle
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -4098,14 +4099,20 @@ function AuthorityDecisionCockpit({
                 <p className="text-slate-400 font-bold">Showing {prioritizedCases.length} of {cases.filter(c => c.stage !== 'Closed').length} active</p>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5">
+            <div className="pt-2 border-t border-white/5">
               <div className="rounded-md bg-white/[0.02] p-2">
-                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Recovery Value</p>
-                <p className="text-sm font-black text-emerald-400">₹{(filteredMetrics.totalValue / 100000).toFixed(1)}L</p>
-              </div>
-              <div className="rounded-md bg-white/[0.02] p-2">
-                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Avg Quality</p>
-                <p className="text-sm font-black text-blue-400">{filteredMetrics.avgQuality}%</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Avg Quality</p>
+                  <div className="group relative">
+                    <button className="text-slate-500 hover:text-slate-300 transition-colors" title="Quality scores are derived from evidence verification, forensic analysis, and venue context assessment.">
+                      <HelpCircle className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block bg-slate-900 border border-white/10 rounded-md px-2 py-1 text-[8px] text-slate-300 whitespace-nowrap z-10">
+                      Average of case quality scores
+                    </div>
+                  </div>
+                </div>
+                <p className="text-sm font-black text-blue-400 mt-1">{filteredMetrics.avgQuality}%</p>
               </div>
             </div>
           </div>

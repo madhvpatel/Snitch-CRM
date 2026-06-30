@@ -66,8 +66,7 @@ import {
   ChevronDown,
   Info,
   Route,
-  Building2,
-  HelpCircle
+  Building2
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -1442,7 +1441,7 @@ const getIncidentTimeline = (caseData: Case, venueCases: Case[] = []) => {
       id: item.id,
       capturedAt: item.timestamp.toISOString(),
       detectedSong: item.songAssessment.title || 'Unknown track',
-      evidenceConfidence: item.qualityScore,
+      evidenceConfidence: Math.min(100, (item.evidenceVaults.length * 30) + (item.chainOfCustody.length * 20)),
       hasForensicArtifacts: Boolean(item.audioDeconstruction?.artifacts?.length || item.evidenceVaults.length),
       status: item.stage,
       sourceLocation: item.location.name || `${item.location.lat}, ${item.location.lng}`
@@ -1746,7 +1745,6 @@ const getPerformanceContextProfile = (caseData: Case): {
   if (hasVideo) score += 6;
   if (venueImageCount >= 2) score += 4;
   if (caseData.trustGates.geofencingContinuity) score += 4;
-  if (caseData.qualityScore >= 85) score += 3;
   if (!hasVideo) score -= 8;
 
   const maxByGrade: Record<PerformanceContextGrade, number> = {
@@ -1775,10 +1773,10 @@ const getDecisionProfile = (caseData: Case) => {
   const trustPassCount = getTrustPassCount(caseData);
   const venueConfidence = Math.min(96, Math.max(42, 52 + caseData.pastOffences * 9 + (caseData.trustGates.geofencingContinuity ? 18 : -12)));
   const publicContext = getPerformanceContextProfile(caseData).score;
-  const rightsReadiness = caseData.songAssessment.isrc && caseData.songAssessment.rightsAssociation ? 86 : 46;
-  const proceduralRisk = Math.max(18, 88 - trustPassCount * 13 - (caseData.chainOfCustody.length * 3));
+  const hasCompleteEvidence = caseData.evidenceVaults.length >= 2 && caseData.chainOfCustody.length >= 1;
+  const hasRightsInfo = caseData.songAssessment.isrc && caseData.songAssessment.rightsAssociation;
 
-  if (caseData.qualityScore >= 86 && trustPassCount >= 4 && venueConfidence >= 72 && publicContext >= 60) {
+  if (trustPassCount >= 4 && venueConfidence >= 72 && publicContext >= 60 && hasCompleteEvidence && hasRightsInfo) {
     return {
       action: 'Send to Litigation',
       tone: 'green' as const,
@@ -1787,29 +1785,29 @@ const getDecisionProfile = (caseData: Case) => {
     };
   }
 
-  if (caseData.qualityScore < 45 || trustPassCount <= 2) {
+  if (trustPassCount <= 2) {
     return {
       action: 'Close Candidate',
       tone: 'red' as const,
-      reason: 'The package has low confidence or material integrity failures that make enforcement unsafe.',
+      reason: 'The package has material integrity failures or insufficient evidence that make enforcement unsafe.',
       blocker: 'Only reopen with a clean capture and stronger venue proof.'
     };
   }
 
-  if (caseData.pastOffences > 1 || caseData.recoverableValue > 90000) {
+  if (caseData.pastOffences > 1) {
     return {
       action: 'Assign to Agent',
       tone: 'amber' as const,
-      reason: 'The case is commercially meaningful, but field-level proof gaps should be fixed before legal review.',
-      blocker: 'Collect venue signage, source classification, rights-body violation context, and entrance geolocation.'
+      reason: 'Repeat offender venue with existing history. Field verification recommended.',
+      blocker: 'Collect additional venue signage, source classification, and entrance geolocation.'
     };
   }
 
   return {
     action: 'Keep Monitoring',
     tone: 'purple' as const,
-    reason: 'The venue remains interesting, but this submission alone is not strong enough for action.',
-    blocker: 'Wait for repeat reports or a stronger capture.'
+    reason: 'The venue and case show potential but require stronger evidence before action.',
+    blocker: 'Wait for repeat reports or additional evidence.'
   };
 };
 
@@ -3586,10 +3584,11 @@ function VenueCaseStack({
 
     venueCases.forEach((caseData) => {
       const key = caseData.songAssessment.isrc || `${caseData.songAssessment.title}:${caseData.songAssessment.artists.join(',')}`;
+      const trustScore = getTrustPassCount(caseData) * 25;
       const existing = grouped.get(key);
       if (existing) {
         existing.cases.push(caseData);
-        existing.bestScore = Math.max(existing.bestScore, caseData.qualityScore);
+        existing.bestScore = Math.max(existing.bestScore, trustScore);
         existing.value += caseData.recoverableValue;
         if (caseData.timestamp > existing.latest) existing.latest = caseData.timestamp;
         return;
@@ -3601,7 +3600,7 @@ function VenueCaseStack({
         isrc: caseData.songAssessment.isrc || 'No ISRC',
         rights: caseData.songAssessment.rightsAssociation || 'Rights pending',
         cases: [caseData],
-        bestScore: caseData.qualityScore,
+        bestScore: trustScore,
         value: caseData.recoverableValue,
         latest: caseData.timestamp
       });
@@ -3949,7 +3948,6 @@ function AuthorityDecisionCockpit({
   runningDemucsIds: Set<string>
 }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [qualityFilter, setQualityFilter] = useState<'all' | 'high' | 'low'>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkActionStage, setBulkActionStage] = useState<CaseStage | null>(null);
 
@@ -3957,13 +3955,6 @@ function AuthorityDecisionCockpit({
     let filtered = [...cases]
       .filter((caseData) => caseData.stage !== 'Closed')
       .sort(compareCasesByPriority);
-
-    // Apply quality filter
-    if (qualityFilter === 'high') {
-      filtered = filtered.filter(c => c.qualityScore >= 80);
-    } else if (qualityFilter === 'low') {
-      filtered = filtered.filter(c => c.qualityScore < 80);
-    }
 
     // Apply search filter
     if (searchQuery) {
@@ -3978,16 +3969,7 @@ function AuthorityDecisionCockpit({
     }
 
     return filtered;
-  }, [cases, searchQuery, qualityFilter]);
-
-  // Calculate metrics for filtered cases
-  const filteredMetrics = useMemo(() => {
-    const totalValue = prioritizedCases.reduce((sum, c) => sum + c.recoverableValue, 0);
-    const avgQuality = prioritizedCases.length > 0
-      ? Math.round(prioritizedCases.reduce((sum, c) => sum + c.qualityScore, 0) / prioritizedCases.length)
-      : 0;
-    return { totalValue, avgQuality };
-  }, [prioritizedCases]);
+  }, [cases, searchQuery]);
 
   const selectedCase = prioritizedCases.find((caseData) => caseData.id === selectedCaseId) || prioritizedCases[0] || cases[0];
   const venueCases = useMemo(() => (
@@ -4071,50 +4053,17 @@ function AuthorityDecisionCockpit({
               </button>
             )}
           </div>
-          <div className="mt-4 flex gap-2">
-            {['all', 'high', 'low'].map(filter => (
-              <button
-                key={filter}
-                onClick={() => setQualityFilter(filter as 'all' | 'high' | 'low')}
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all",
-                  qualityFilter === filter
-                    ? "bg-blue-500/20 border border-blue-500/40 text-blue-300"
-                    : "bg-white/5 border border-white/10 text-slate-400 hover:text-slate-200"
-                )}
-              >
-                {filter === 'all' ? 'All Quality' : filter === 'high' ? 'High (80+)' : 'Low (<80)'}
-              </button>
-            ))}
-          </div>
-          <div className="mt-5 space-y-3">
+          <div className="mt-5">
             <div className="flex items-center justify-between">
               <p className="text-sm font-black text-white">Signal Work Queue</p>
               <span className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] font-black text-slate-300">{prioritizedCases.length} cases</span>
             </div>
-            {(searchQuery || qualityFilter !== 'all') && (
-              <div className="text-[9px] text-slate-500 space-y-1">
-                {searchQuery && <p>🔍 Search: "{searchQuery}"</p>}
-                {qualityFilter !== 'all' && <p>📊 Quality: {qualityFilter === 'high' ? 'High (80+)' : 'Low (<80)'}</p>}
+            {searchQuery && (
+              <div className="text-[9px] text-slate-500 space-y-1 mt-2">
+                <p>🔍 Search: "{searchQuery}"</p>
                 <p className="text-slate-400 font-bold">Showing {prioritizedCases.length} of {cases.filter(c => c.stage !== 'Closed').length} active</p>
               </div>
             )}
-            <div className="pt-2 border-t border-white/5">
-              <div className="rounded-md bg-white/[0.02] p-2">
-                <div className="flex items-center gap-2">
-                  <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Avg Quality</p>
-                  <div className="group relative">
-                    <button className="text-slate-500 hover:text-slate-300 transition-colors" title="Quality scores are derived from evidence verification, forensic analysis, and venue context assessment.">
-                      <HelpCircle className="w-3.5 h-3.5" />
-                    </button>
-                    <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block bg-slate-900 border border-white/10 rounded-md px-2 py-1 text-[8px] text-slate-300 whitespace-nowrap z-10">
-                      Average of case quality scores
-                    </div>
-                  </div>
-                </div>
-                <p className="text-sm font-black text-blue-400 mt-1">{filteredMetrics.avgQuality}%</p>
-              </div>
-            </div>
           </div>
         </div>
         {selectedIds.size > 0 && (
@@ -4490,7 +4439,8 @@ function LitigationClaimReadiness({
 
   const venueProof = Math.min(94, 50 + currentCase.pastOffences * 10 + (currentCase.trustGates.geofencingContinuity ? 18 : 0));
   const licenseReady = currentCase.songAssessment.isrc && currentCase.songAssessment.rightsAssociation ? 82 : 42;
-  const noticeReady = currentCase.qualityScore >= 75 && licenseReady > 70 && venueProof > 72;
+  const chainOfCustodyReady = currentCase.chainOfCustody.length >= 2;
+  const noticeReady = chainOfCustodyReady && licenseReady > 70 && venueProof > 72;
 
   return (
     <div className="grid h-full grid-cols-[320px_minmax(0,1fr)_340px] overflow-hidden bg-slate-950 text-slate-100 max-lg:grid-cols-1 max-lg:overflow-y-auto">

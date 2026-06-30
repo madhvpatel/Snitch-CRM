@@ -216,18 +216,7 @@ const hydrateCase = (caseData: Partial<Case> & { timestamp?: string | Date }): C
   const trustGates = (caseData.trustGates || {}) as Partial<Case['trustGates']>;
   const songAssessment = (caseData.songAssessment || {}) as Partial<Case['songAssessment']>;
   const absoluteProof = (caseData.absoluteProof || {}) as Partial<Case['absoluteProof']>;
-
-  // Generate fallback qualityScore if not provided by API
-  let qualityScore = normalizeQualityScore(caseData);
-  if (qualityScore.qualityScore === 0 && !caseData.qualityScore && !caseData.qualityScore10) {
-    const seedValue = (caseData.id || '').charCodeAt(0) + (caseData.location?.name || '').length;
-    const score = 65 + (seedValue % 35);
-    qualityScore = {
-      qualityScore: score,
-      qualityScore10: Math.round(score / 10),
-      scoreScale: '0-100' as const,
-    };
-  }
+  const qualityScore = normalizeQualityScore(caseData);
 
   return {
     ...caseData,

@@ -3947,11 +3947,37 @@ function AuthorityDecisionCockpit({
   runningSignalAnalysisIds: Set<string>,
   runningDemucsIds: Set<string>
 }) {
-  const prioritizedCases = useMemo(() => (
-    [...cases]
+  const [searchQuery, setSearchQuery] = useState('');
+  const [qualityFilter, setQualityFilter] = useState<'all' | 'high' | 'low'>('all');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkActionStage, setBulkActionStage] = useState<CaseStage | null>(null);
+
+  const prioritizedCases = useMemo(() => {
+    let filtered = [...cases]
       .filter((caseData) => caseData.stage !== 'Closed')
-      .sort(compareCasesByPriority)
-  ), [cases]);
+      .sort(compareCasesByPriority);
+
+    // Apply quality filter
+    if (qualityFilter === 'high') {
+      filtered = filtered.filter(c => c.qualityScore >= 80);
+    } else if (qualityFilter === 'low') {
+      filtered = filtered.filter(c => c.qualityScore < 80);
+    }
+
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(c =>
+        c.id.toLowerCase().includes(query) ||
+        c.location.name.toLowerCase().includes(query) ||
+        c.location.city.toLowerCase().includes(query) ||
+        c.songAssessment.title.toLowerCase().includes(query) ||
+        c.songAssessment.artists.some(a => a.toLowerCase().includes(query))
+      );
+    }
+
+    return filtered;
+  }, [cases, searchQuery, qualityFilter]);
   const selectedCase = prioritizedCases.find((caseData) => caseData.id === selectedCaseId) || prioritizedCases[0] || cases[0];
   const venueCases = useMemo(() => (
     [...cases]
@@ -4015,9 +4041,40 @@ function AuthorityDecisionCockpit({
               <p className="text-xs font-medium text-slate-500">Directed authority intake</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-md border border-white/10 bg-[#141417] px-3 py-2 text-slate-500">
-            <Search className="h-4 w-4" />
-            <span className="text-sm font-medium">Search case, venue, signal</span>
+          <div className="flex items-center gap-2 rounded-md border border-white/10 bg-[#141417] px-3 py-2">
+            <Search className="h-4 w-4 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Search case, venue, signal..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 outline-none"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="text-slate-400 hover:text-white transition-colors"
+                title="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <div className="mt-4 flex gap-2">
+            {['all', 'high', 'low'].map(filter => (
+              <button
+                key={filter}
+                onClick={() => setQualityFilter(filter as 'all' | 'high' | 'low')}
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all",
+                  qualityFilter === filter
+                    ? "bg-blue-500/20 border border-blue-500/40 text-blue-300"
+                    : "bg-white/5 border border-white/10 text-slate-400 hover:text-slate-200"
+                )}
+              >
+                {filter === 'all' ? 'All Quality' : filter === 'high' ? 'High (80+)' : 'Low (<80)'}
+              </button>
+            ))}
           </div>
           <div className="mt-5 flex items-center justify-between">
             <p className="text-sm font-black text-white">Signal Work Queue</p>
@@ -4035,13 +4092,39 @@ function AuthorityDecisionCockpit({
               <button
                 key={caseData.id}
                 type="button"
-                onClick={() => onSelectCase(caseData.id)}
+                onClick={() => {
+                  if (selectedIds.size > 0 || (selectedIds.size === 0 && selectedIds.has(caseData.id))) {
+                    // Toggle bulk selection
+                    const newIds = new Set(selectedIds);
+                    if (newIds.has(caseData.id)) {
+                      newIds.delete(caseData.id);
+                    } else {
+                      newIds.add(caseData.id);
+                    }
+                    setSelectedIds(newIds);
+                  } else {
+                    onSelectCase(caseData.id);
+                  }
+                }}
                 className={cn(
-                  "w-full border-b border-white/10 px-5 py-5 text-left transition-colors hover:bg-white/[0.03]",
-                  selectedCase.id === caseData.id && "bg-white/[0.06]"
+                  "w-full border-b border-white/10 px-5 py-5 text-left transition-colors hover:bg-white/[0.03] flex items-center gap-3",
+                  selectedCase.id === caseData.id && !selectedIds.has(caseData.id) && "bg-white/[0.06]",
+                  selectedIds.has(caseData.id) && "bg-blue-500/10 border-blue-500/30"
                 )}
               >
-                <div className="mb-3 flex items-center justify-between gap-3">
+                {selectedIds.size > 0 && (
+                  <div className="flex items-center">
+                    <div className={cn(
+                      "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
+                      selectedIds.has(caseData.id)
+                        ? "bg-blue-500 border-blue-500"
+                        : "border-slate-600"
+                    )}>
+                      {selectedIds.has(caseData.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                    </div>
+                  </div>
+                )}
+                <div className="flex-1 mb-3 flex items-center justify-between gap-3">
                   <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-500">{caseData.id}</span>
                   <div className="flex flex-wrap justify-end gap-1.5">
                     <span className={cn("rounded-md border px-2.5 py-1 font-mono text-[9px] font-black", toneClasses[rowProfile.tone])}>

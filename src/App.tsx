@@ -3952,6 +3952,15 @@ function AuthorityDecisionCockpit({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkActionStage, setBulkActionStage] = useState<CaseStage | null>(null);
 
+  // Calculate metrics for filtered cases
+  const filteredMetrics = useMemo(() => {
+    const totalValue = prioritizedCases.reduce((sum, c) => sum + c.recoverableValue, 0);
+    const avgQuality = prioritizedCases.length > 0
+      ? Math.round(prioritizedCases.reduce((sum, c) => sum + c.qualityScore, 0) / prioritizedCases.length)
+      : 0;
+    return { totalValue, avgQuality };
+  }, [prioritizedCases]);
+
   const prioritizedCases = useMemo(() => {
     let filtered = [...cases]
       .filter((caseData) => caseData.stage !== 'Closed')
@@ -4076,9 +4085,28 @@ function AuthorityDecisionCockpit({
               </button>
             ))}
           </div>
-          <div className="mt-5 flex items-center justify-between">
-            <p className="text-sm font-black text-white">Signal Work Queue</p>
-            <span className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] font-black text-slate-300">{prioritizedCases.length} cases</span>
+          <div className="mt-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-black text-white">Signal Work Queue</p>
+              <span className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] font-black text-slate-300">{prioritizedCases.length} cases</span>
+            </div>
+            {(searchQuery || qualityFilter !== 'all') && (
+              <div className="text-[9px] text-slate-500 space-y-1">
+                {searchQuery && <p>🔍 Search: "{searchQuery}"</p>}
+                {qualityFilter !== 'all' && <p>📊 Quality: {qualityFilter === 'high' ? 'High (80+)' : 'Low (<80)'}</p>}
+                <p className="text-slate-400 font-bold">Showing {prioritizedCases.length} of {cases.filter(c => c.stage !== 'Closed').length} active</p>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5">
+              <div className="rounded-md bg-white/[0.02] p-2">
+                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Recovery Value</p>
+                <p className="text-sm font-black text-emerald-400">₹{(filteredMetrics.totalValue / 100000).toFixed(1)}L</p>
+              </div>
+              <div className="rounded-md bg-white/[0.02] p-2">
+                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Avg Quality</p>
+                <p className="text-sm font-black text-blue-400">{filteredMetrics.avgQuality}%</p>
+              </div>
+            </div>
           </div>
         </div>
         {selectedIds.size > 0 && (

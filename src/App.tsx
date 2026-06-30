@@ -3005,14 +3005,13 @@ function BackendAnalysisActions({
   isDemucsRunning: boolean,
   compact?: boolean
 }) {
-  const isAdvancedProcessingDisabled = true;
   return (
     <section className={cn("rounded-lg border border-slate-800 bg-slate-950/50", compact ? "p-4" : "p-5")}>
       <div className="mb-4">
         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Backend analysis</p>
         {!compact && (
           <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
-            Advanced processing needs the admin v2 submission queue before it can run from the CRM.
+            Trigger Phase 2 advanced processing for this case.
           </p>
         )}
       </div>
@@ -3020,29 +3019,29 @@ function BackendAnalysisActions({
         <button
           type="button"
           onClick={() => onRunSignalAnalysis(caseData.id)}
-          disabled={isAdvancedProcessingDisabled || isSignalAnalysisRunning || isDemucsRunning}
+          disabled={isSignalAnalysisRunning || isDemucsRunning}
           className={cn(
             "flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left text-xs font-black uppercase tracking-widest transition-all",
-            isAdvancedProcessingDisabled || isSignalAnalysisRunning || isDemucsRunning
+            isSignalAnalysisRunning || isDemucsRunning
               ? "border-slate-800 bg-slate-900 text-slate-500"
               : "border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/15"
           )}
         >
-          <span>{isAdvancedProcessingDisabled ? 'Admin v2 required' : 'Run signal analysis'}</span>
+          <span>{isSignalAnalysisRunning ? 'Running…' : 'Run signal analysis'}</span>
           <RefreshCcw className={cn("h-4 w-4", isSignalAnalysisRunning && "animate-spin")} />
         </button>
         <button
           type="button"
           onClick={() => onRunDemucs(caseData.id)}
-          disabled={isAdvancedProcessingDisabled || isDemucsRunning || isSignalAnalysisRunning}
+          disabled={isDemucsRunning || isSignalAnalysisRunning}
           className={cn(
             "flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left text-xs font-black uppercase tracking-widest transition-all",
-            isAdvancedProcessingDisabled || isDemucsRunning || isSignalAnalysisRunning
+            isDemucsRunning || isSignalAnalysisRunning
               ? "border-slate-800 bg-slate-900 text-slate-500"
               : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
           )}
         >
-          <span>{isAdvancedProcessingDisabled ? 'Queue wiring required' : 'Run Demucs'}</span>
+          <span>{isDemucsRunning ? 'Running…' : 'Run Demucs'}</span>
           <RefreshCcw className={cn("h-4 w-4", isDemucsRunning && "animate-spin")} />
         </button>
       </div>
@@ -3274,7 +3273,6 @@ function AuthorityVenueEvidencePage({
 }) {
   const selectedCase = cases.find((caseData) => caseData.id === selectedCaseId) || cases[0];
   const [expandedVaultIds, setExpandedVaultIds] = useState<Set<string>>(() => new Set());
-  const [expandedCaseIds, setExpandedCaseIds] = useState<Set<string>>(() => new Set());
 
   const venueCases = useMemo(() => {
     if (!selectedCase) return [];
@@ -3290,14 +3288,6 @@ function AuthorityVenueEvidencePage({
       return new Set([selectedCase.evidenceVaults[0].id]);
     });
   }, [selectedCase?.id, selectedCase?.evidenceVaults]);
-
-  useEffect(() => {
-    if (!selectedCase?.id) return;
-    setExpandedCaseIds((current) => {
-      if (current.has(selectedCase.id)) return current;
-      return new Set([...current, selectedCase.id]);
-    });
-  }, [selectedCase?.id]);
 
   if (!selectedCase) {
     return (
@@ -3347,15 +3337,6 @@ function AuthorityVenueEvidencePage({
       const next = new Set(current);
       if (next.has(vaultId)) next.delete(vaultId);
       else next.add(vaultId);
-      return next;
-    });
-  };
-
-  const toggleCaseEvidence = (caseId: string) => {
-    setExpandedCaseIds((current) => {
-      const next = new Set(current);
-      if (next.has(caseId)) next.delete(caseId);
-      else next.add(caseId);
       return next;
     });
   };
@@ -3436,60 +3417,25 @@ function AuthorityVenueEvidencePage({
         </section>
 
         <section className="mt-4 space-y-4">
-          {venueCases.map((caseData) => {
-            const isCaseExpanded = expandedCaseIds.has(caseData.id);
-            return (
+          {venueCases.map((caseData) => (
             <div key={caseData.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      selectCase(caseData.id);
-                      toggleCaseEvidence(caseData.id);
-                    }}
-                    className="text-left"
-                  >
-                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400">{caseData.id} · {format(caseData.timestamp, 'MMM d, yyyy HH:mm')}</p>
-                    <h2 className="mt-2 text-xl font-black tracking-tight text-white">{caseData.songAssessment.title}</h2>
-                    <p className="mt-1 text-xs font-medium text-slate-400">{caseData.songAssessment.artists.join(', ')} · {caseData.musicLabel}</p>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => selectCase(caseData.id)}
+                  className="text-left"
+                >
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400">{caseData.id} · {format(caseData.timestamp, 'MMM d, yyyy HH:mm')}</p>
+                  <h2 className="mt-2 text-xl font-black tracking-tight text-white">{caseData.songAssessment.title}</h2>
+                  <p className="mt-1 text-xs font-medium text-slate-400">{caseData.songAssessment.artists.join(', ')} · {caseData.musicLabel}</p>
+                </button>
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-full border border-slate-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">{caseData.stage}</span>
                   <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-300">{getTrustPassCount(caseData)}/5 trust</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      selectCase(caseData.id);
-                      toggleCaseEvidence(caseData.id);
-                    }}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-blue-500/40 hover:text-blue-300"
-                  >
-                    Evidence
-                    <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", isCaseExpanded && "rotate-180 text-blue-300")} />
-                  </button>
                 </div>
               </div>
 
-              <AnimatePresence initial={false}>
-                {isCaseExpanded && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="mb-4 space-y-5 overflow-hidden"
-                  >
-                    <RawVideoPanel caseData={caseData} />
-                    <ReviewReadinessPanel caseData={caseData} />
-                    <SignalEvidencePanel caseData={caseData} compact />
-                    <RawAnalysisPanel caseData={caseData} />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="grid gap-3">
+              <div className="mb-4 grid gap-3">
                 {caseData.evidenceVaults.map((vault) => {
                   const isExpanded = expandedVaultIds.has(vault.id);
                   const videoUrl = vault.videoUrl || caseData.videoProofUrl || caseData.absoluteProof.smallVideoUrl;
@@ -3526,6 +3472,9 @@ function AuthorityVenueEvidencePage({
                             transition={{ duration: 0.2 }}
                             className="overflow-hidden border-t border-slate-800"
                           >
+                            <div className="p-4">
+                              <RawVideoPanel caseData={caseData} />
+                            </div>
                             <AuthorityStyleEvidencePackage
                               caseData={caseData}
                               vault={vault}
@@ -3538,9 +3487,14 @@ function AuthorityVenueEvidencePage({
                   );
                 })}
               </div>
+
+              <div className="mt-4 space-y-5">
+                <ReviewReadinessPanel caseData={caseData} />
+                <SignalEvidencePanel caseData={caseData} compact />
+                <RawAnalysisPanel caseData={caseData} />
+              </div>
             </div>
-          );
-          })}
+          ))}
         </section>
       </main>
 

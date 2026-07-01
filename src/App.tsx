@@ -3756,309 +3756,276 @@ function CaseReviewWizard({
       // Deduplicated frame images served as /media/ URLs
       const frameImages = [...new Set(allVenueImages)].filter(Boolean);
 
-      // Overall verdict colour
+      // Verdict colour from actual score + sourceClass (no static text, just colour logic)
       const verdictStrong = score >= 0.7 && confidence >= 0.6;
       const verdictWeak = score < 0.4 || confidence < 0.35;
-      const verdictColor = verdictStrong ? 'emerald' : verdictWeak ? 'red' : 'amber';
-      const verdictColorMap: Record<string, { border: string; bg: string; text: string; dot: string }> = {
-        emerald: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-300', dot: 'bg-emerald-500' },
-        amber:   { border: 'border-amber-500/30',   bg: 'bg-amber-500/10',   text: 'text-amber-300',   dot: 'bg-amber-500'   },
-        red:     { border: 'border-red-500/30',      bg: 'bg-red-500/10',     text: 'text-red-300',     dot: 'bg-red-500'     },
+      const srcNorm = String(sourceClass).toLowerCase();
+      const isPA = srcNorm.includes('pa') || srcNorm.includes('large') || srcNorm.includes('venue');
+      const verdictColor = verdictWeak ? 'red' : (verdictStrong && isPA) ? 'emerald' : 'amber';
+      const verdictColorMap: Record<string, { border: string; bg: string; text: string; dot: string; label: string }> = {
+        emerald: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-300', dot: 'bg-emerald-500', label: 'Confirmed' },
+        amber:   { border: 'border-amber-500/30',   bg: 'bg-amber-500/10',   text: 'text-amber-300',   dot: 'bg-amber-500',   label: 'Partial'   },
+        red:     { border: 'border-red-500/30',      bg: 'bg-red-500/10',     text: 'text-red-300',     dot: 'bg-red-500',     label: 'Weak'      },
       };
       const vc = verdictColorMap[verdictColor];
 
-      // Plain-English verdict summary
-      const verdictHeadline =
-        verdictStrong ? `The algorithm is confident this is a live performance at a commercial venue.`
-        : verdictWeak  ? `The algorithm could not confirm a live performance — evidence is too weak to proceed.`
-        :                `The algorithm found partial evidence of a live performance. Analyst review required.`;
-
-      const verdictSubtext =
-        verdictStrong ? `All major signals align. The audio was captured in a real venue with PA equipment. This is actionable.`
-        : verdictWeak  ? `One or more critical signals are missing or contradictory. Do not advance without stronger corroboration.`
-        :                `Some signals are present but not conclusive. Review the evidence below and use your judgment.`;
-
-      // Evidence cards — each one a "gotcha" check the algorithm ran
-      type EvidenceCard = {
-        title: string;
-        what: string;       // what we looked for
-        found: string;      // what we actually detected
-        why: string;        // plain-English why this matters
-        gotcha?: string;    // red-flag note if suspicious
-        status: 'pass' | 'fail' | 'partial' | 'missing';
-      };
-
-      const evidenceCards: EvidenceCard[] = [
-        {
-          title: 'Live source probability',
-          what: 'Is the audio a live performance or a recorded playback (e.g. streaming from Spotify)?',
-          found: `${humanizeToken(sourceClass)} · ${(score * 100).toFixed(0)}% certainty`,
-          why: 'A live source means someone is performing music in a real space. A recorded source could mean the phone was used near a TV or a DJ playing a pre-recorded set — both of which may still infringe, but via different licensing routes.',
-          gotcha: score < 0.5 ? 'Score is below 50%. The classifier is not confident. Corroborating evidence is essential before escalation.' : undefined,
-          status: score >= 0.7 ? 'pass' : score >= 0.4 ? 'partial' : 'fail',
-        },
-        {
-          title: 'Classifier confidence',
-          what: 'How certain is the algorithm about its own verdict?',
-          found: confidence >= 0.7 ? `High confidence (${(confidence * 100).toFixed(0)}%) — verdict is reliable` : confidence >= 0.4 ? `Medium confidence (${(confidence * 100).toFixed(0)}%) — treat as probable, not certain` : `Low confidence (${(confidence * 100).toFixed(0)}%) — verdict unreliable`,
-          why: 'The classifier scores its own certainty separately from the verdict. A high-score verdict with low confidence is a red flag — it means the model is guessing. Both need to be high to trust the output.',
-          gotcha: confidence < 0.5 ? 'Low confidence means the classifier hit an ambiguous pattern. This case needs human review before action.' : undefined,
-          status: confidence >= 0.7 ? 'pass' : confidence >= 0.4 ? 'partial' : 'fail',
-        },
-        {
-          title: 'Acoustic venue fingerprint',
-          what: 'Does the room sound like a known commercial venue (reverb, crowd noise, PA reflections)?',
-          found: venueIdentitySignals.length > 0 ? `${venueIdentitySignals.length} venue signal(s) detected: ${venueIdentitySignals.slice(0, 3).join(' · ')}` : 'No venue acoustic signals detected',
-          why: 'Venues have distinct acoustic signatures — high ceilings, crowd murmur, echo patterns from hard walls. These are hard to fake on a phone recording. If the algorithm detects them, it strongly suggests a real venue was present.',
-          gotcha: venueIdentitySignals.length === 0 ? 'No acoustic signature means we cannot confirm this was a large commercial space from audio alone.' : undefined,
-          status: venueIdentitySignals.length >= 2 ? 'pass' : venueIdentitySignals.length === 1 ? 'partial' : 'missing',
-        },
-        {
-          title: 'Audio equipment detection',
-          what: 'Is there PA gear, mixing desks, or amplification equipment audible in the recording?',
-          found: equipment.length > 0 ? `Detected: ${equipment.join(', ')}` : 'No audio equipment signatures found',
-          why: 'Venues use PA systems, amplifiers, and mixers. These leave spectral fingerprints — frequency boosts, compression artefacts, speaker distortion. Detecting them confirms professional audio playback, not a casual home speaker.',
-          gotcha: equipment.length === 0 ? 'No equipment detected. This does not rule out a live venue, but it removes one corroborating signal.' : undefined,
-          status: equipment.length >= 2 ? 'pass' : equipment.length === 1 ? 'partial' : 'missing',
-        },
-        {
-          title: 'Playback context',
-          what: 'What situation was the audio captured in — live band, DJ set, background music, streaming?',
-          found: playbackContext || 'Not determined',
-          why: 'Context tells us the type of infringement. A DJ set using pre-recorded tracks is a different violation from a live band. The playback context shapes which rights bodies to notify and what licence is required.',
-          status: playbackContext ? 'pass' : 'missing',
-        },
-        {
-          title: 'Visible signage / text in frames',
-          what: 'Did OCR find any venue name, license notice, or promotional text in the captured video frames?',
-          found: signageOcr ? `"${signageOcr.slice(0, 120)}"` : 'No readable text extracted from frames',
-          why: 'Signage is critical corroboration. A venue name on a banner, a ticket price on a poster, or a "No Recording" notice all anchor the capture to a real place and time. This is the kind of evidence that holds up in a dispute.',
-          gotcha: signageOcr && signageOcr.toLowerCase().includes('stream') ? 'Detected text may reference streaming — review carefully to ensure this is a live event.' : undefined,
-          status: signageOcr ? 'pass' : 'missing',
-        },
-      ];
-
-      // Demucs stem interpretation
+      // Demucs stem data
       const vocalStemArtifact = caseData.audioDeconstruction?.artifacts.find(a => a.stem === 'vocals');
       const hasStemData = demucsComplete && caseData.audioDeconstruction;
 
-      const statusIcon = (s: EvidenceCard['status']) =>
-        s === 'pass'    ? <span className="text-emerald-400 text-base leading-none">✓</span>
-        : s === 'fail'  ? <span className="text-red-400 text-base leading-none">✗</span>
-        : s === 'partial' ? <span className="text-amber-400 text-base leading-none">~</span>
-        : <span className="text-slate-600 text-base leading-none">·</span>;
+      // Raw signal values from source_analysis for the detail rows
+      const signals = (sourceAnalysis?.signals as Record<string, number> | undefined) ?? {};
+      const operationalLabel = (sourceAnalysis?.operationalLabel as string | undefined) ?? '';
+      const classifierMode = (sourceAnalysis?.classifierMode as string | undefined) ?? (sourceAssessment?.classifierMode ?? '');
+      const modelVersion = (sourceAnalysis?.modelVersion as string | undefined) ?? '';
 
-      const statusBorder = (s: EvidenceCard['status']) =>
-        s === 'pass' ? 'border-emerald-500/25 bg-emerald-500/5'
-        : s === 'fail' ? 'border-red-500/25 bg-red-500/5'
-        : s === 'partial' ? 'border-amber-500/25 bg-amber-500/5'
-        : 'border-white/5 bg-white/[0.02]';
+      // Evidence bars — color encodes strength: green ≥70%, amber 40–69%, red <40%
+      const barColor = (v: number) =>
+        v >= 0.7 ? { bar: 'bg-emerald-500', text: 'text-emerald-300', glow: 'shadow-emerald-500/30' }
+        : v >= 0.4 ? { bar: 'bg-amber-400',   text: 'text-amber-300',   glow: 'shadow-amber-400/30'   }
+        :             { bar: 'bg-red-500',      text: 'text-red-300',     glow: 'shadow-red-500/30'     };
 
-      // SVG bars
-      const svgBarH = 18;
-      const svgBarGap = 8;
-      const svgLabelW = 136;
-      const svgTotalW = 340;
-      const svgBars = [
-        { label: 'Live source score', value: score, color: '#3b82f6' },
-        { label: 'Classifier confidence', value: confidence, color: '#8b5cf6' },
-        { label: 'Venue signals', value: Math.min(venueIdentitySignals.length / 4, 1), color: '#10b981' },
-        { label: 'Equipment found', value: Math.min(equipment.length / 3, 1), color: '#f59e0b' },
-        { label: 'Context resolved', value: playbackContext ? 1 : 0, color: '#6366f1' },
-        { label: 'Signage / OCR', value: signageOcr ? 1 : 0, color: '#ec4899' },
+      type EvidenceBar = { label: string; value: number; tooltip: string };
+      const evidenceBars: EvidenceBar[] = [
+        {
+          label: 'Live source score',
+          value: score,
+          tooltip: "The audio classifier's probability that the captured sound came from a live venue PA system rather than a personal device or stream. Above 70% is considered reliable evidence of live performance.",
+        },
+        {
+          label: 'Classifier confidence',
+          value: confidence,
+          tooltip: 'How certain the classifier is about its own verdict. A high source score with low confidence means the model is guessing — both must be high to trust the output. Below 50% requires human review.',
+        },
+        {
+          label: 'Venue acoustic signals',
+          value: Math.min(venueIdentitySignals.length / 4, 1),
+          tooltip: `Venue-specific acoustic fingerprints detected (${venueIdentitySignals.length} signal${venueIdentitySignals.length !== 1 ? 's' : ''}). These are room characteristics — reverb patterns, crowd noise, echo decay — that are hard to fake and anchor the recording to a real commercial space.`,
+        },
+        {
+          label: 'Audio equipment detected',
+          value: Math.min(equipment.length / 3, 1),
+          tooltip: `PA speakers, mixing desks, or amplifiers identified in the visual frames (${equipment.length} item${equipment.length !== 1 ? 's' : ''}). Equipment presence confirms professional audio playback rather than a phone or laptop speaker.`,
+        },
+        {
+          label: 'Playback context',
+          value: playbackContext ? (playbackContext === 'inconclusive' ? 0.2 : 0.85) : 0,
+          tooltip: `Whether the visual AI resolved the playback situation — live band, DJ set, background music, or streaming. Context: "${playbackContext || 'not determined'}". Knowing the context determines which licence type was violated.`,
+        },
+        {
+          label: 'Signage / OCR',
+          value: signageOcr ? 1 : 0,
+          tooltip: signageOcr
+            ? `Readable text was extracted from video frames: "${signageOcr.slice(0, 100)}". Visible signage is the strongest single corroboration signal — it anchors the capture to a named location and is difficult to dispute.`
+            : 'No readable text found in any captured frame. Signage (venue name, price boards, banners) is the strongest visual anchor and would significantly strengthen this case.',
+        },
       ];
-      const svgTotalH = svgBars.length * (svgBarH + svgBarGap);
 
       return (
-        <div className="space-y-6">
+        <div className="space-y-5">
 
           {/* Header */}
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400 mb-1">Step 04 · Investigation</p>
-            <h2 className="text-2xl font-black text-white tracking-tight">What the algorithm found — and why</h2>
-            <p className="mt-2 text-xs text-slate-400 max-w-2xl leading-6">
-              This page walks through every test the system ran on the captured audio and video. Each check has a plain-English explanation of what it looked for, what it found, and whether that finding strengthens or weakens the case.
-            </p>
+            <h2 className="text-2xl font-black text-white tracking-tight">Source classification</h2>
           </div>
 
-          {/* Verdict banner */}
+          {/* Classification result — data only, no editorial */}
           <div className={cn("rounded-xl border p-5", vc.border, vc.bg)}>
-            <div className="flex items-start gap-4">
-              <div className={cn("mt-1 h-3 w-3 rounded-full shrink-0", vc.dot)} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 flex-wrap mb-2">
-                  <p className={cn("text-base font-black", vc.text)}>{verdictHeadline}</p>
-                  <span className={cn("text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border", vc.border, vc.text)}>
-                    {humanizeToken(sourceClass)} · {(score * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 leading-5">{verdictSubtext}</p>
-                {sourceAnalysisSummary && (
-                  <p className="mt-3 text-xs text-slate-300 leading-6 border-t border-white/10 pt-3">{sourceAnalysisSummary}</p>
-                )}
-                {analysis?.ai_review_brief?.one_line && (
-                  <p className="mt-2 text-xs text-slate-300 leading-6 italic">"{analysis.ai_review_brief.one_line}"</p>
-                )}
-                {explanations.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-white/10 space-y-1">
-                    {explanations.map((ex, i) => (
-                      <p key={i} className="text-[11px] text-slate-400 leading-5">→ {ex}</p>
-                    ))}
-                  </div>
-                )}
+            <div className="flex items-center gap-3 mb-4">
+              <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", vc.dot)} />
+              <span className={cn("text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border", vc.border, vc.text)}>{vc.label}</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+              <div>
+                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Classification</p>
+                <p className="text-sm font-black text-white">{humanizeToken(sourceClass)}</p>
               </div>
-            </div>
-          </div>
-
-          {/* Signal strength graph */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Evidence strength at a glance</p>
-            <p className="text-[10px] text-slate-600 mb-4 leading-4">Each bar shows how strongly one signal contributed to the verdict. Longer = stronger evidence.</p>
-            <svg width="100%" viewBox={`0 0 ${svgTotalW} ${svgTotalH}`} style={{ display: 'block' }}>
-              {svgBars.map((bar, i) => {
-                const y = i * (svgBarH + svgBarGap);
-                const maxBarW = svgTotalW - svgLabelW - 44;
-                const barW = Math.max(bar.value > 0 ? 4 : 0, maxBarW * bar.value);
-                return (
-                  <g key={i} transform={`translate(0,${y})`}>
-                    <text x={0} y={svgBarH - 4} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif" fontWeight="700">
-                      {bar.label.toUpperCase()}
-                    </text>
-                    <rect x={svgLabelW} y={2} width={maxBarW} height={svgBarH - 4} rx={3} fill="#0f172a" />
-                    {barW > 0 && <rect x={svgLabelW} y={2} width={barW} height={svgBarH - 4} rx={3} fill={bar.color} opacity={0.75} />}
-                    <text x={svgLabelW + maxBarW + 6} y={svgBarH - 4} fontSize={8.5} fill="#94a3b8" fontFamily="system-ui, sans-serif" fontWeight="700">
-                      {`${(bar.value * 100).toFixed(0)}%`}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-
-          {/* Evidence cards */}
-          <div>
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Detailed evidence checks</p>
-            <p className="text-[10px] text-slate-600 mb-4 leading-4">Every check the algorithm ran, explained in plain English. Red flags are highlighted.</p>
-            <div className="space-y-3">
-              {evidenceCards.map((card, i) => (
-                <div key={i} className={cn("rounded-xl border p-4", statusBorder(card.status))}>
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 w-5 shrink-0 flex items-center justify-center">{statusIcon(card.status)}</div>
-                    <div className="flex-1 min-w-0 space-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-xs font-black text-white">{card.title}</p>
-                        <span className={cn("text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border",
-                          card.status === 'pass' ? "border-emerald-500/30 text-emerald-400"
-                          : card.status === 'fail' ? "border-red-500/30 text-red-400"
-                          : card.status === 'partial' ? "border-amber-500/30 text-amber-400"
-                          : "border-slate-700 text-slate-500"
-                        )}>
-                          {card.status === 'pass' ? 'Confirmed' : card.status === 'fail' ? 'Failed' : card.status === 'partial' ? 'Partial' : 'Not detected'}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 gap-1.5">
-                        <div>
-                          <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">What we tested</p>
-                          <p className="text-[11px] text-slate-400 leading-5">{card.what}</p>
-                        </div>
-                        <div>
-                          <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">What we found</p>
-                          <p className="text-[11px] text-slate-200 leading-5 font-medium">{card.found}</p>
-                        </div>
-                        <div>
-                          <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">Why it matters</p>
-                          <p className="text-[11px] text-slate-400 leading-5">{card.why}</p>
-                        </div>
-                        {card.gotcha && (
-                          <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2">
-                            <p className="text-[8px] font-black text-red-400 uppercase tracking-widest mb-0.5">⚠ Red flag</p>
-                            <p className="text-[11px] text-red-300 leading-5">{card.gotcha}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Demucs stem analysis */}
-          {hasStemData && (
-            <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-5">
-              <p className="text-[9px] font-black uppercase tracking-widest text-violet-400 mb-1">Audio stem deconstruction (Demucs)</p>
-              <p className="text-[10px] text-slate-500 mb-4 leading-4">
-                Demucs is a machine learning model that separates audio into its component layers — vocals, bass, drums, and other instruments. This helps us confirm whether a song was being performed or played back, and isolate the vocal track for ID.
-              </p>
-              {vocalStemArtifact && (
-                <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-4 py-3 mb-3">
-                  <p className="text-[9px] font-black text-violet-300 uppercase tracking-widest mb-1">Key finding — vocal stem isolated</p>
-                  <p className="text-[11px] text-slate-300 leading-5">
-                    A clean vocal track was successfully extracted. This is the most important stem for song identification — it can be compared against ISRC databases to match the specific recording being used.
-                  </p>
-                  <a href={vocalStemArtifact.url} target="_blank" rel="noreferrer"
-                    className="inline-block mt-2 text-[9px] font-black text-violet-300 uppercase tracking-widest hover:text-violet-200">
-                    Listen to isolated vocals →
-                  </a>
+              {operationalLabel && (
+                <div>
+                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Operational label</p>
+                  <p className="text-sm font-black text-white">{operationalLabel}</p>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-2">
-                {caseData.audioDeconstruction!.artifacts.map(artifact => (
-                  <div key={artifact.assetId} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-black/30 px-3 py-2.5">
-                    <div>
-                      <p className="text-[9px] font-black text-white capitalize">{artifact.stem}</p>
-                      <p className="text-[9px] text-slate-500 mt-0.5">
-                        {artifact.stem === 'vocals' ? 'Lead voice / singing — key for song ID'
-                        : artifact.stem === 'bass' ? 'Low-frequency foundation — confirms live band'
-                        : artifact.stem === 'drums' ? 'Percussion — confirms live drums vs programmed'
-                        : 'Other instruments — strings, keys, synths'}
-                      </p>
+              <div>
+                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Score</p>
+                <p className={cn("text-sm font-black", vc.text)}>{(score * 100).toFixed(0)} / 100</p>
+              </div>
+              <div>
+                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Confidence</p>
+                <p className={cn("text-sm font-black", vc.text)}>{(confidence * 100).toFixed(0)}%</p>
+              </div>
+              {classifierMode && (
+                <div>
+                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Classifier</p>
+                  <p className="text-xs text-slate-400 font-mono">{classifierMode}{modelVersion ? ` · ${modelVersion}` : ''}</p>
+                </div>
+              )}
+            </div>
+            {/* Backend explanation bullets — verbatim from pipeline */}
+            {explanations.length > 0 && (
+              <div className="border-t border-white/10 pt-4 space-y-1.5">
+                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-2">Classifier reasoning</p>
+                {explanations.map((ex, i) => (
+                  <p key={i} className="text-[11px] text-slate-300 leading-5">· {ex}</p>
+                ))}
+              </div>
+            )}
+            {/* Backend AI brief — verbatim */}
+            {analysis?.ai_review_brief?.one_line && (
+              <p className="mt-3 text-[11px] text-slate-400 leading-5 border-t border-white/10 pt-3 italic">
+                {analysis.ai_review_brief.one_line}
+              </p>
+            )}
+          </div>
+
+          {/* Evidence strength bars */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Signal strength</p>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /><span className="text-[8px] text-slate-600">≥70%</span></div>
+                <div className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-amber-400" /><span className="text-[8px] text-slate-600">40–69%</span></div>
+                <div className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-red-500" /><span className="text-[8px] text-slate-600">&lt;40%</span></div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {evidenceBars.map((bar, i) => {
+                const c = barColor(bar.value);
+                const pct = `${(bar.value * 100).toFixed(0)}%`;
+                return (
+                  <div key={i} className="group relative">
+                    <div className="flex items-center gap-3">
+                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-500 w-44 shrink-0">{bar.label}</p>
+                      <div className="flex-1 h-3 rounded-full bg-slate-800 overflow-hidden">
+                        <div className={cn("h-full rounded-full transition-all duration-500", c.bar)} style={{ width: pct }} />
+                      </div>
+                      <p className={cn("text-[10px] font-black w-9 text-right shrink-0", c.text)}>{pct}</p>
                     </div>
-                    <a href={artifact.url} target="_blank" rel="noreferrer"
-                      className="text-[9px] font-black text-violet-300 uppercase tracking-widest hover:text-violet-200 shrink-0">
-                      Play
-                    </a>
+                    <div className="pointer-events-none absolute left-44 right-0 top-full mt-1.5 z-20 hidden group-hover:block">
+                      <div className="rounded-lg border border-white/10 bg-slate-950 shadow-xl p-3 ml-3">
+                        <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: bar.value >= 0.7 ? '#34d399' : bar.value >= 0.4 ? '#fbbf24' : '#f87171' }}>
+                          {bar.label} · {pct}
+                        </p>
+                        <p className="text-[10px] text-slate-400 leading-4">{bar.tooltip}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Audio signal values — raw pipeline output */}
+          {Object.keys(signals).length > 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-4">Audio signal values</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
+                {Object.entries(signals).map(([key, val]) => (
+                  <div key={key}>
+                    <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">{humanizeToken(key)}</p>
+                    <p className="text-xs font-mono text-slate-300">{typeof val === 'number' ? val.toFixed(3) : String(val)}</p>
                   </div>
                 ))}
               </div>
-              {caseData.audioDeconstruction!.summary && (
-                <p className="mt-3 text-[11px] text-slate-400 leading-5">{caseData.audioDeconstruction!.summary}</p>
-              )}
             </div>
           )}
 
-          {/* Forensic / visual AI output */}
-          {(forensicSummary || visualAnalysis) && (
+          {/* Visual analysis — backend output */}
+          {visualAnalysis && (
             <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">AI forensic analysis</p>
-                <p className="text-[10px] text-slate-600 leading-4">These notes were generated by the AI backend after running a deeper pass on the capture. They surface patterns a human might miss.</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Visual analysis</p>
+
+              {/* Key outputs as labeled fields */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                {playbackContext && (
+                  <div>
+                    <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Playback context</p>
+                    <p className="text-xs font-black text-white">{humanizeToken(playbackContext)}</p>
+                  </div>
+                )}
+                {(visualAnalysis.confidence as number | undefined) != null && (
+                  <div>
+                    <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Visual confidence</p>
+                    <p className="text-xs font-black text-white">{((visualAnalysis.confidence as number) * 100).toFixed(0)}%</p>
+                  </div>
+                )}
               </div>
-              {visualAnalysis && (
+
+              {/* Equipment chips */}
+              {equipment.length > 0 && (
                 <div>
-                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Visual AI</p>
-                  <p className="text-[11px] text-slate-400 leading-5">{typeof visualAnalysis === 'string' ? visualAnalysis : JSON.stringify(visualAnalysis).slice(0, 400)}</p>
+                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-2">Equipment detected</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {equipment.map((e, i) => (
+                      <span key={i} className="text-[9px] font-bold text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2 py-1 rounded-full">{e}</span>
+                    ))}
+                  </div>
                 </div>
               )}
-              {forensicSummary && (
+
+              {/* Venue identity signal chips */}
+              {venueIdentitySignals.length > 0 && (
                 <div>
-                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Forensic</p>
-                  <p className="text-[11px] text-slate-400 leading-5">{typeof forensicSummary === 'string' ? forensicSummary : JSON.stringify(forensicSummary).slice(0, 400)}</p>
+                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-2">Venue identity signals</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {venueIdentitySignals.map((s, i) => (
+                      <span key={i} className="text-[9px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Obstruction flags */}
+              {(visualAnalysis.obstructionFlags as string[] | undefined)?.length > 0 && (
+                <div>
+                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-2">Obstruction flags</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(visualAnalysis.obstructionFlags as string[]).map((f, i) => (
+                      <span key={i} className="text-[9px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full">{humanizeToken(f)}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Signage OCR verbatim */}
+              {signageOcr && (
+                <div>
+                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Signage OCR</p>
+                  <p className="text-xs text-slate-300 font-mono leading-5 bg-black/30 rounded-lg px-3 py-2 border border-white/5">"{signageOcr}"</p>
+                </div>
+              )}
+
+              {/* Visual AI summary — verbatim backend text */}
+              {sourceAnalysisSummary && (
+                <div>
+                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Visual AI summary</p>
+                  <p className="text-[11px] text-slate-400 leading-5">{sourceAnalysisSummary}</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Speaker frame verification — images when available, AI observations always */}
+          {/* Forensic summary — verbatim backend */}
+          {forensicSummary && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-3">Forensic summary</p>
+              {typeof forensicSummary === 'string'
+                ? <p className="text-[11px] text-slate-400 leading-5">{forensicSummary}</p>
+                : Object.entries(forensicSummary).map(([k, v]) => (
+                  <div key={k} className="mb-2">
+                    <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">{humanizeToken(k)}</p>
+                    <p className="text-[11px] text-slate-400 leading-5">{String(v)}</p>
+                  </div>
+                ))
+              }
+            </div>
+          )}
+
+          {/* Frame observations — verbatim backend AI */}
           {(frameImages.length > 0 || frameObservations.length > 0) && (
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
-              <p className="text-[9px] font-black uppercase tracking-widest text-amber-400 mb-1">Frame verification — possible speaker / PA locations</p>
-              <p className="text-[10px] text-slate-500 mb-1 leading-5">
-                The system extracted these frames from the captured video and ran visual AI on each one. Frames showing speakers, PA rigs, amplifiers, or mixing desks provide visual proof of a commercial audio setup.
-              </p>
-              <p className="text-[10px] text-amber-500/70 mb-4 leading-4">
-                Mark each frame: <strong className="text-amber-300">Speaker visible</strong> = you can see audio equipment. <strong className="text-slate-400">No equipment</strong> = crowd, stage, or unrelated content. Your tags improve the visual detector.
-              </p>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-4">Frame analysis</p>
               {frameImages.length > 0 ? (
                 <div className="grid grid-cols-3 gap-3">
                   {frameImages.map((img, i) => {
@@ -4070,31 +4037,21 @@ function CaseReviewWizard({
                       )}>
                         <img src={img} alt={`Frame ${i + 1}`} className="w-full aspect-video object-cover block" />
                         <div className="p-2 bg-black/50 space-y-1.5">
-                          <p className="text-[9px] text-slate-500 font-mono">
-                            Frame {i + 1}{obs?.timestampSeconds != null ? ` · ${obs.timestampSeconds.toFixed(1)}s` : ''}
+                          <p className="text-[9px] text-slate-600 font-mono">
+                            {obs?.timestampSeconds != null ? `${obs.timestampSeconds.toFixed(1)}s` : `Frame ${i + 1}`}
                           </p>
                           {obs?.observation && (
                             <p className="text-[9px] text-slate-400 leading-4">{obs.observation}</p>
                           )}
                           <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => setFrameVotes(v => ({ ...v, [img]: true }))}
+                            <button onClick={() => setFrameVotes(v => ({ ...v, [img]: true }))}
                               className={cn("flex-1 py-1 rounded text-[8px] font-black uppercase tracking-widest border transition-colors",
-                                vote === true
-                                  ? "bg-emerald-500 border-emerald-500 text-white"
-                                  : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-                              )}>
-                              Speaker visible
-                            </button>
-                            <button
-                              onClick={() => setFrameVotes(v => ({ ...v, [img]: false }))}
+                                vote === true ? "bg-emerald-500 border-emerald-500 text-white" : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                              )}>Speaker</button>
+                            <button onClick={() => setFrameVotes(v => ({ ...v, [img]: false }))}
                               className={cn("flex-1 py-1 rounded text-[8px] font-black uppercase tracking-widest border transition-colors",
-                                vote === false
-                                  ? "bg-slate-600 border-slate-600 text-white"
-                                  : "border-slate-700 text-slate-500 hover:bg-slate-800"
-                              )}>
-                              No equipment
-                            </button>
+                                vote === false ? "bg-slate-600 border-slate-600 text-white" : "border-slate-700 text-slate-500 hover:bg-slate-800"
+                              )}>None</button>
                           </div>
                         </div>
                       </div>
@@ -4102,11 +4059,7 @@ function CaseReviewWizard({
                   })}
                 </div>
               ) : (
-                /* No image assets yet — show AI per-frame observations as text cards */
                 <div className="space-y-2">
-                  <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-3 py-2 mb-3">
-                    <p className="text-[9px] text-amber-400/70 leading-4">Video frames were analysed by the visual AI but image files were not retained. The AI's per-frame observations are shown below.</p>
-                  </div>
                   {frameObservations.map((obs, i) => (
                     <div key={i} className="flex items-start gap-3 rounded-lg border border-white/5 bg-black/20 px-3 py-2.5">
                       <span className="text-[9px] font-black text-slate-600 font-mono shrink-0 mt-0.5">{obs.timestampSeconds.toFixed(1)}s</span>
@@ -4116,45 +4069,66 @@ function CaseReviewWizard({
                 </div>
               )}
               {frameImages.length > 0 && Object.keys(frameVotes).length > 0 && (
-                <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-4">
-                  <p className="text-[10px] text-emerald-400">{Object.values(frameVotes).filter(v => v === true).length} frame(s) with equipment</p>
-                  <p className="text-[10px] text-slate-500">{Object.values(frameVotes).filter(v => v === false).length} frame(s) ruled out</p>
+                <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-4">
+                  <p className="text-[10px] text-emerald-400">{Object.values(frameVotes).filter(v => v === true).length} speaker</p>
+                  <p className="text-[10px] text-slate-500">{Object.values(frameVotes).filter(v => v === false).length} no equipment</p>
                   <p className="text-[10px] text-slate-600">{frameImages.length - Object.keys(frameVotes).length} unreviewed</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Analyst verdict confirmation */}
+          {/* Demucs stems */}
+          {hasStemData && (
+            <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-violet-400">Stem deconstruction</p>
+                <div className="flex gap-3 text-[9px] text-slate-500">
+                  <span>Provider: {caseData.audioDeconstruction!.provider}</span>
+                  {caseData.audioDeconstruction!.model && <span>Model: {caseData.audioDeconstruction!.model}</span>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {caseData.audioDeconstruction!.artifacts.map(artifact => (
+                  <div key={artifact.assetId} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-black/30 px-3 py-2.5">
+                    <p className="text-xs font-black text-white capitalize">{artifact.stem}</p>
+                    <a href={artifact.url} target="_blank" rel="noreferrer"
+                      className="text-[9px] font-black text-violet-300 uppercase tracking-widest hover:text-violet-200 shrink-0">
+                      Play
+                    </a>
+                  </div>
+                ))}
+              </div>
+              {caseData.audioDeconstruction!.summary && (
+                <p className="mt-3 text-[11px] text-slate-400 leading-5">{caseData.audioDeconstruction!.summary}</p>
+              )}
+              {vocalStemArtifact && (
+                <a href={vocalStemArtifact.url} target="_blank" rel="noreferrer"
+                  className="inline-block mt-2 text-[9px] font-black text-violet-300 uppercase tracking-widest hover:text-violet-200">
+                  Isolated vocals →
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Analyst verdict — training feedback only */}
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Your verdict — does the algorithm agree with what you see?</p>
-            <p className="text-[10px] text-slate-500 mb-4 leading-5">
-              You have reviewed all the evidence above. Does the algorithm's conclusion match your professional assessment? This helps improve model accuracy over time — disagreements are reviewed by the data team.
-            </p>
-            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 mb-4">
-              <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Algorithm verdict</p>
-              <p className="text-sm font-black text-white">{humanizeToken(sourceClass)} — {(score * 100).toFixed(0)}% live source probability, {(confidence * 100).toFixed(0)}% confidence</p>
-              <p className="text-[10px] text-slate-400 mt-1 leading-4">{verdictHeadline}</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-3">Analyst verdict</p>
+            <div className="flex items-center gap-2 mb-4">
+              <p className="text-[9px] text-slate-500">Classification:</p>
+              <span className="text-xs font-black text-white">{humanizeToken(sourceClass)}</span>
+              <span className="text-[9px] text-slate-600">·</span>
+              <span className="text-[9px] text-slate-400">{(score * 100).toFixed(0)}/100 · {(confidence * 100).toFixed(0)}% confidence</span>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              <button
-                onClick={() => setVerdictFeedback('agree')}
+              <button onClick={() => setVerdictFeedback('agree')}
                 className={cn("px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-colors",
-                  verdictFeedback === 'agree'
-                    ? "bg-emerald-500 border-emerald-500 text-white"
-                    : "border-emerald-500/30 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
-                )}>
-                I agree — algorithm is correct
-              </button>
-              <button
-                onClick={() => setVerdictFeedback('disagree')}
+                  verdictFeedback === 'agree' ? "bg-emerald-500 border-emerald-500 text-white" : "border-emerald-500/30 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+                )}>Correct</button>
+              <button onClick={() => setVerdictFeedback('disagree')}
                 className={cn("px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-colors",
-                  verdictFeedback === 'disagree'
-                    ? "bg-red-500 border-red-500 text-white"
-                    : "border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20"
-                )}>
-                I disagree — this is wrong
-              </button>
+                  verdictFeedback === 'disagree' ? "bg-red-500 border-red-500 text-white" : "border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20"
+                )}>Incorrect</button>
             </div>
             {verdictFeedback && (
               <div className={cn("mt-3 rounded-lg border px-3 py-2",

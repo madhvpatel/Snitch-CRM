@@ -64,6 +64,8 @@ import {
   LogOut,
   X,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Info,
   Route,
   Building2
@@ -301,6 +303,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [listTab, setListTab] = useState<'upcoming' | 'active' | 'closed'>('active');
   
+  const [navCollapsed, setNavCollapsed] = useState(false);
   const [invalidMoveId, setInvalidMoveId] = useState<string | null>(null);
   const [audioBackfillCaseIds, setAudioBackfillCaseIds] = useState<Set<string>>(() => new Set());
   const [reevaluatingCaseIds, setReevaluatingCaseIds] = useState<Set<string>>(() => new Set());
@@ -822,21 +825,41 @@ export default function App() {
       </div>
 
       {/* Sidebar */}
-      <aside className="w-16 md:w-64 border-r border-slate-800 flex min-h-0 flex-col bg-slate-900/50">
-        <div className="p-6 flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
+      <aside
+        style={{
+          width: navCollapsed ? '56px' : '256px',
+          minWidth: navCollapsed ? '56px' : '256px',
+          transition: 'width 200ms cubic-bezier(0.4,0,0.2,1), min-width 200ms cubic-bezier(0.4,0,0.2,1)',
+        }}
+        className="border-r border-slate-800 flex min-h-0 flex-col bg-slate-900/50 overflow-hidden"
+      >
+        {/* Logo row + collapse toggle */}
+        <div className="p-3 flex items-center gap-3 border-b border-slate-800/60">
+          <div className="w-9 h-9 shrink-0 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
             <Shield className="text-white w-5 h-5" />
           </div>
-          <span className="hidden md:block font-bold text-lg tracking-tight text-white">Vigil</span>
+          {!navCollapsed && (
+            <span className="flex-1 font-bold text-lg tracking-tight text-white whitespace-nowrap overflow-hidden">Vigil</span>
+          )}
+          <button
+            type="button"
+            aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            onClick={() => setNavCollapsed(v => !v)}
+            className="shrink-0 flex h-7 w-7 items-center justify-center rounded-md border border-slate-700 bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+          >
+            {navCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+          </button>
         </div>
 
-        <nav className="flex-1 px-3 space-y-1 mt-4">
-          <div className="pb-2 px-3">
-            <p className="hidden md:block text-[10px] font-bold uppercase tracking-widest text-slate-500">Workspace</p>
-          </div>
-          <div className="mx-1 mb-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+        <nav className="flex-1 px-2 space-y-1 mt-4 overflow-hidden">
+          {!navCollapsed && (
+            <div className="pb-2 px-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Workspace</p>
+            </div>
+          )}
+          <div className={cn("mx-1 mb-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-3", navCollapsed && "mx-0 rounded-xl")}>
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white">
                 {activeScreen === 'authority' ? (
                   <Shield className="h-4 w-4" />
                 ) : activeScreen === 'agent' ? (
@@ -845,71 +868,82 @@ export default function App() {
                   <Gavel className="h-4 w-4" />
                 )}
               </div>
-              <div className="hidden min-w-0 md:block">
-                <p className="truncate text-xs font-black uppercase tracking-widest text-white">
-                  {activeScreen === 'authority' ? 'Authority' : activeScreen === 'agent' ? 'Agent' : 'Litigation'}
-                </p>
-                <p className="truncate text-[10px] font-medium text-slate-500">{signedInAccount.username}</p>
-              </div>
+              {!navCollapsed && (
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-black uppercase tracking-widest text-white">
+                    {activeScreen === 'authority' ? 'Authority' : activeScreen === 'agent' ? 'Agent' : 'Litigation'}
+                  </p>
+                  <p className="truncate text-[10px] font-medium text-slate-500">{signedInAccount.username}</p>
+                </div>
+              )}
             </div>
           </div>
 
           {activeScreen === 'authority' && (
             <>
-              <div className="pt-6 pb-2 px-3">
-                <p className="hidden md:block text-tiny uppercase tracking-widest text-text-quaternary">Authority</p>
-              </div>
+              {!navCollapsed && (
+                <div className="pt-6 pb-2 px-3">
+                  <p className="text-tiny uppercase tracking-widest text-text-quaternary">Authority</p>
+                </div>
+              )}
+              {navCollapsed && <div className="pt-4" />}
               <NavItem
                 active={activeTab === 'venues'}
                 onClick={() => setActiveTab('venues')}
                 icon={<Building2 className="w-4 h-4" />}
                 label="Venues"
+                collapsed={navCollapsed}
               />
               <NavItem
                 active={activeTab === 'cases'}
                 onClick={() => setActiveTab('cases')}
                 icon={<Inbox className="w-4 h-4" />}
                 label="Cases"
+                collapsed={navCollapsed}
               />
-              <NavItem 
-                active={activeTab === 'map'} 
-                onClick={() => setActiveTab('map')} 
-                icon={<MapIcon className="w-4 h-4" />} 
-                label="Map Intelligence" 
+              <NavItem
+                active={activeTab === 'map'}
+                onClick={() => setActiveTab('map')}
+                icon={<MapIcon className="w-4 h-4" />}
+                label="Map Intelligence"
+                collapsed={navCollapsed}
               />
-              <NavItem 
-                active={activeTab === 'progress'} 
-                onClick={() => setActiveTab('progress')} 
-                icon={<Columns className="w-4 h-4" />} 
-                label="Progress" 
+              <NavItem
+                active={activeTab === 'progress'}
+                onClick={() => setActiveTab('progress')}
+                icon={<Columns className="w-4 h-4" />}
+                label="Progress"
+                collapsed={navCollapsed}
               />
               <NavItem
                 active={activeTab === 'venue-resolution'}
                 onClick={() => setActiveTab('venue-resolution')}
                 icon={<Route className="w-4 h-4" />}
                 label="Venue Resolution"
+                collapsed={navCollapsed}
               />
-              <NavItem 
-                active={activeTab === 'reports'} 
-                onClick={() => setActiveTab('reports')} 
-                icon={<BarChart3 className="w-4 h-4" />} 
-                label="Reports" 
+              <NavItem
+                active={activeTab === 'reports'}
+                onClick={() => setActiveTab('reports')}
+                icon={<BarChart3 className="w-4 h-4" />}
+                label="Reports"
+                collapsed={navCollapsed}
               />
             </>
           )}
         </nav>
 
-        <div className="p-4 border-t border-slate-800 space-y-4">
+        <div className="p-3 border-t border-slate-800 space-y-3">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
+            <div className="w-8 h-8 shrink-0 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
               {signedInAccount.initials}
             </div>
-            <div className="hidden md:block overflow-hidden">
-              <p className="text-xs font-semibold text-white truncate">
-                {signedInAccount.displayName}
-              </p>
-              <p className="text-[10px] text-slate-500 truncate">{userRole}</p>
-            </div>
+            {!navCollapsed && (
+              <div className="overflow-hidden">
+                <p className="text-xs font-semibold text-white truncate">{signedInAccount.displayName}</p>
+                <p className="text-[10px] text-slate-500 truncate">{userRole}</p>
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -918,7 +952,7 @@ export default function App() {
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-red-500/30 hover:text-red-300"
           >
             <LogOut className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">Sign Out</span>
+            {!navCollapsed && <span>Sign Out</span>}
           </button>
         </div>
       </aside>
@@ -3246,6 +3280,1384 @@ function VenueListPage({ cases, onOpenVenue }: { cases: Case[]; onOpenVenue: (ca
   );
 }
 
+// ─── Case Review Wizard ──────────────────────────────────────────────────────
+// Sequential 6-step review flow for IPRS/PPL analysts.
+// Steps: Immutable → Video Proofing → Geofencing → Investigation → Music Rights → Final
+const WIZARD_STEPS = [
+  { id: 'immutable',    label: 'Immutable',     short: '01' },
+  { id: 'video',        label: 'Video Proofing', short: '02' },
+  { id: 'geofencing',   label: 'Geofencing',    short: '03' },
+  { id: 'investigation',label: 'Investigation', short: '04' },
+  { id: 'rights',       label: 'Music Rights',  short: '05' },
+  { id: 'final',        label: 'Final',         short: '06' },
+] as const;
+type WizardStepId = typeof WIZARD_STEPS[number]['id'];
+type GateResult = 'pass' | 'fail' | 'pending';
+
+function CaseReviewWizard({
+  caseData,
+  onUpdateStage,
+  onRunDemucs,
+  isDemucsRunning,
+  onSendToAgentQueue,
+}: {
+  caseData: Case;
+  onUpdateStage: (id: string, stage: CaseStage, notes?: string, type?: 'Agent' | 'Lawyer') => void;
+  onRunDemucs: (caseId: string) => void;
+  isDemucsRunning: boolean;
+  onSendToAgentQueue: (caseId: string) => void;
+}) {
+  const [step, setStep] = useState<WizardStepId>('immutable');
+  const [audioMode, setAudioMode] = useState<'raw' | 'isolated'>('raw');
+  const [venueRecognized, setVenueRecognized] = useState<boolean | null>(null);
+  const [songRecognized, setSongRecognized] = useState<boolean | null>(null);
+  const [immutableOverride, setImmutableOverride] = useState(false);
+  const [frameVotes, setFrameVotes] = useState<Record<string, boolean | null>>({});
+  const [verdictFeedback, setVerdictFeedback] = useState<'agree' | 'disagree' | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const stepIndex = WIZARD_STEPS.findIndex(s => s.id === step);
+
+  // ── Gate evaluations ───────────────────────────────────────────────────
+  const immutableGates = [
+    { key: 'mediaHashKey',        label: 'Media Hash',     detail: 'SHA-256 hash of captured media verified against server record.' },
+    { key: 'payloadSignature',    label: 'Payload Signature', detail: 'ECDSA device signature on the capture payload verified.' },
+    { key: 'clockSkewDetection',  label: 'Clock Drift',    detail: 'Timestamp delta between device and server within acceptable range.' },
+    { key: 'deviceTrustBand',     label: 'Device Trust',   detail: 'Capture device is registered and within the approved trust band.' },
+  ] as const;
+
+  const immutablePass = immutableGates.every(g => caseData.trustGates[g.key]);
+  const immutableGate: GateResult = immutablePass ? 'pass' : 'fail';
+
+  const hasVideo = Boolean(caseData.videoProofUrl || caseData.absoluteProof.smallVideoUrl
+    || caseData.evidenceVaults.some(v => v.videoUrl));
+  const rawVideoUrl = caseData.videoProofUrl || caseData.evidenceVaults.find(v => v.videoUrl)?.videoUrl
+    || caseData.absoluteProof.smallVideoUrl || '';
+  const demucsComplete = caseData.audioDeconstruction?.status === 'completed';
+  const vocalStem = caseData.audioDeconstruction?.artifacts?.find(
+    a => a.stem === 'vocals' || a.stem?.includes('vocal')
+  );
+  const currentVideoUrl = audioMode === 'isolated' && vocalStem ? vocalStem.url : rawVideoUrl;
+
+  const allVenueImages = [
+    ...caseData.absoluteProof.venueImages,
+    ...caseData.evidenceVaults.flatMap(v => v.images),
+  ].filter(Boolean);
+
+  const mandateProfile = getViolationMandateProfile(caseData);
+  const hasRights = Boolean(caseData.songAssessment.isrc && caseData.songAssessment.rightsAssociation
+    && caseData.songAssessment.rightsAssociation !== 'Rights Context Pending');
+
+  const geoOk = caseData.trustGates.geofencingContinuity;
+  const venueAttributionSignal = getVenueAttributionSignal(caseData);
+  const geofenceIsAuxiliary = venueRecognized === true;
+
+  const goTo = (s: WizardStepId) => setStep(s);
+  const next = () => {
+    const idx = WIZARD_STEPS.findIndex(s => s.id === step);
+    if (idx < WIZARD_STEPS.length - 1) setStep(WIZARD_STEPS[idx + 1].id);
+  };
+
+  // ── Step content ───────────────────────────────────────────────────────
+  const renderStep = () => {
+    // ── 01 IMMUTABLE ──────────────────────────────────────────────────
+    if (step === 'immutable') {
+      return (
+        <div className="space-y-6">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400 mb-1">Step 01 · Immutable Integrity</p>
+            <h2 className="text-2xl font-black text-white tracking-tight">Chain of custody gates</h2>
+            <p className="mt-2 text-xs text-slate-400 max-w-xl leading-5">
+              These four signals are cryptographically bound to the capture. If any fail, the evidence will not withstand basic legal scrutiny — there is no point reviewing further.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {immutableGates.map(gate => {
+              const passed = caseData.trustGates[gate.key];
+              return (
+                <div key={gate.key} className={cn(
+                  "rounded-xl border p-4 flex items-start gap-3",
+                  passed ? "border-emerald-500/30 bg-emerald-500/5" : "border-red-500/40 bg-red-500/5"
+                )}>
+                  <div className={cn(
+                    "mt-0.5 h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0",
+                    passed ? "border-emerald-500 bg-emerald-500" : "border-red-500 bg-red-500/20"
+                  )}>
+                    {passed
+                      ? <CheckCircle2 className="h-3 w-3 text-white" />
+                      : <X className="h-3 w-3 text-red-400" />
+                    }
+                  </div>
+                  <div>
+                    <p className={cn("text-sm font-black", passed ? "text-emerald-300" : "text-red-300")}>{gate.label}</p>
+                    <p className="mt-1 text-[10px] text-slate-500 leading-4">{gate.detail}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {!immutablePass && !immutableOverride && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5">
+              <p className="text-sm font-black text-red-300 mb-1">Integrity failure — cannot proceed to review</p>
+              <p className="text-xs text-slate-400 leading-5 mb-4">
+                One or more immutable gates have failed. This capture will not hold up in court. The recommended action is to return this to the agent queue for a clean re-capture.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => onSendToAgentQueue(caseData.id)}
+                  className="px-4 py-2.5 rounded-lg bg-red-500/20 border border-red-500/40 text-xs font-black text-red-300 uppercase tracking-widest hover:bg-red-500/30 transition-colors"
+                >
+                  Add to Agent Queue
+                </button>
+                <button
+                  onClick={() => setImmutableOverride(true)}
+                  className="px-4 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-200 transition-colors"
+                >
+                  Override &amp; proceed anyway
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(immutablePass || immutableOverride) && (
+            <div className="flex items-center justify-between pt-2">
+              <div className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-black uppercase tracking-widest",
+                immutablePass
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+              )}>
+                <CheckCircle2 className="h-4 w-4" />
+                {immutablePass ? 'All integrity gates passed' : 'Proceeding with override — flag in audit trail'}
+              </div>
+              <button onClick={next} className="px-5 py-2.5 rounded-lg bg-blue-600 text-xs font-black text-white uppercase tracking-widest hover:bg-blue-500 transition-colors">
+                Proceed to Video Proofing →
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── 02 VIDEO PROOFING ─────────────────────────────────────────────
+    if (step === 'video') {
+      return (
+        <div className="space-y-6">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400 mb-1">Step 02 · Video Proofing</p>
+            <h2 className="text-2xl font-black text-white tracking-tight">Watch, verify, confirm</h2>
+            <p className="mt-2 text-xs text-slate-400 max-w-xl leading-5">
+              Your eyes and ears are the primary evidence here. Watch the capture, toggle to isolated audio to hear the song clearly, then confirm what you saw and heard below.
+            </p>
+          </div>
+
+          {/* Video player + controls */}
+          <div className="rounded-xl overflow-hidden border border-slate-800 bg-black">
+            {hasVideo ? (
+              <video
+                ref={videoRef}
+                key={currentVideoUrl}
+                controls
+                preload="metadata"
+                src={currentVideoUrl}
+                className="aspect-video w-full bg-black object-contain max-h-[420px]"
+              />
+            ) : (
+              <div className="aspect-video flex items-center justify-center bg-slate-950">
+                <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">No video attached</p>
+              </div>
+            )}
+            <div className="flex items-center justify-between border-t border-slate-800 bg-slate-950 px-4 py-2.5 gap-4">
+              {/* Raw / Isolated toggle */}
+              <div className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 p-1">
+                <button
+                  onClick={() => setAudioMode('raw')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all",
+                    audioMode === 'raw' ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-300"
+                  )}
+                >
+                  Raw audio
+                </button>
+                <button
+                  onClick={() => { if (demucsComplete && vocalStem) setAudioMode('isolated'); }}
+                  title={!demucsComplete ? 'Run Demucs first to get isolated audio' : undefined}
+                  className={cn(
+                    "px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all",
+                    audioMode === 'isolated' ? "bg-violet-600 text-white"
+                      : demucsComplete && vocalStem ? "text-slate-400 hover:text-slate-200"
+                      : "text-slate-700 cursor-not-allowed"
+                  )}
+                >
+                  Isolated vocals
+                </button>
+              </div>
+              {/* Demucs button — lives beside the video controls */}
+              <button
+                onClick={() => onRunDemucs(caseData.id)}
+                disabled={isDemucsRunning}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all",
+                  demucsComplete
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                    : isDemucsRunning
+                    ? "border-slate-700 bg-slate-800 text-slate-500"
+                    : "border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/15"
+                )}
+              >
+                <RefreshCcw className={cn("h-3.5 w-3.5", isDemucsRunning && "animate-spin")} />
+                {isDemucsRunning ? 'Running Demucs…' : demucsComplete ? 'Stems ready' : 'Run Demucs'}
+              </button>
+              <p className="text-[10px] text-slate-600 font-medium ml-auto">{format(caseData.timestamp, 'MMM d, yyyy · HH:mm')}</p>
+            </div>
+          </div>
+
+          {/* Detected song info */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Detected Song</p>
+              <p className="text-base font-black text-white leading-tight">{caseData.songAssessment.title || 'Unknown'}</p>
+              <p className="mt-1 text-[11px] text-slate-400">{caseData.songAssessment.artists.join(', ')}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Detection Duration</p>
+              <p className="text-base font-black text-white leading-tight">
+                {caseData.audioDeconstruction?.summary
+                  ? 'See analysis'
+                  : 'Full capture'}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">Relevant for fine calculation</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Peak Identification</p>
+              <p className="text-base font-black text-white leading-tight">
+                {caseData.audioDeconstruction?.peakSelectionStem
+                  ? `Via ${caseData.audioDeconstruction.peakSelectionStem}`
+                  : demucsComplete ? 'Stem analysis' : 'ACRCloud match'}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">Point of clearest audio</p>
+            </div>
+          </div>
+
+          {/* AI video description — what's visible/audible in this video */}
+          {caseData.aiExplanation && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-3">Video evidence description</p>
+              <p className="text-xs text-slate-300 leading-6">{caseData.aiExplanation}</p>
+              {caseData.absoluteProof.performanceContext && (
+                <p className="mt-2 text-[10px] text-slate-500 leading-5">
+                  <span className="font-bold text-slate-400">Performance context: </span>
+                  {caseData.absoluteProof.performanceContext}
+                </p>
+              )}
+              {caseData.absoluteProof.obstructionFlags && caseData.absoluteProof.obstructionFlags !== 'None' && (
+                <p className="mt-1 text-[10px] text-amber-400/70 leading-5">
+                  <span className="font-bold">Obstruction: </span>
+                  {caseData.absoluteProof.obstructionFlags}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Extracted frames gallery — single scrollable row */}
+          {allVenueImages.length > 0 && (
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-3">Venue identifiers — extracted frames</p>
+              <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'thin' }}>
+                {allVenueImages.map((url, i) => (
+                  <img
+                    key={i}
+                    src={url}
+                    alt={`Frame ${i + 1}`}
+                    className="h-32 w-52 shrink-0 rounded-lg border border-slate-800 object-cover"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Human confirmation */}
+          <div className="space-y-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Admin confirmation</p>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 flex items-center justify-between gap-4">
+              <p className="text-sm font-semibold text-white">
+                Do you recognise the venue as <span className="text-blue-300 font-black">{caseData.location.name}</span>?
+              </p>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  onClick={() => setVenueRecognized(true)}
+                  className={cn("px-4 py-2 rounded-lg border text-xs font-black uppercase tracking-widest transition-all",
+                    venueRecognized === true ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300" : "border-slate-700 text-slate-400 hover:text-white")}
+                >Yes</button>
+                <button
+                  onClick={() => setVenueRecognized(false)}
+                  className={cn("px-4 py-2 rounded-lg border text-xs font-black uppercase tracking-widest transition-all",
+                    venueRecognized === false ? "bg-red-500/20 border-red-500/50 text-red-300" : "border-slate-700 text-slate-400 hover:text-white")}
+                >No</button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 flex items-center justify-between gap-4">
+              <p className="text-sm font-semibold text-white">
+                Do you recognise the song as <span className="text-violet-300 font-black">{caseData.songAssessment.title || 'Unknown'}</span>?
+              </p>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  onClick={() => setSongRecognized(true)}
+                  className={cn("px-4 py-2 rounded-lg border text-xs font-black uppercase tracking-widest transition-all",
+                    songRecognized === true ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300" : "border-slate-700 text-slate-400 hover:text-white")}
+                >Yes</button>
+                <button
+                  onClick={() => setSongRecognized(false)}
+                  className={cn("px-4 py-2 rounded-lg border text-xs font-black uppercase tracking-widest transition-all",
+                    songRecognized === false ? "bg-red-500/20 border-red-500/50 text-red-300" : "border-slate-700 text-slate-400 hover:text-white")}
+                >No</button>
+              </div>
+            </div>
+
+            {venueRecognized === false && songRecognized === false && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+                <p className="text-xs font-black text-amber-300 mb-1">Neither confirmed — geofencing becomes critical</p>
+                <p className="text-[11px] text-slate-400 leading-5">
+                  If you cannot confirm the venue or the song, the geofencing data is the last resort to establish where this capture was taken. The next step will evaluate that data.
+                </p>
+              </div>
+            )}
+
+            {(venueRecognized !== null || songRecognized !== null) && !(venueRecognized === false && songRecognized === false && !geoOk) && (
+              <div className="flex justify-end pt-2">
+                <button onClick={next} className="px-5 py-2.5 rounded-lg bg-blue-600 text-xs font-black text-white uppercase tracking-widest hover:bg-blue-500 transition-colors">
+                  Proceed to Geofencing →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ── 03 GEOFENCING ─────────────────────────────────────────────────
+    if (step === 'geofencing') {
+      const geoBucket = caseData.venueAttribution?.status || caseData.locationDelta?.geoBucket || 'unknown';
+      const withinEnvelope = caseData.venueAttribution?.withinAccuracyEnvelope ?? caseData.locationDelta?.withinAccuracyEnvelope;
+      const selectedMin = [
+        caseData.venueAttribution?.selectedVenueDistanceStartMeters,
+        caseData.venueAttribution?.selectedVenueDistanceEndMeters,
+        caseData.locationDelta?.selectedVenueDistanceStartMeters,
+        caseData.locationDelta?.selectedVenueDistanceEndMeters,
+      ].filter((v): v is number => v != null);
+      const closestMeters = selectedMin.length ? Math.min(...selectedMin) : null;
+
+      return (
+        <div className="space-y-6">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400 mb-1">Step 03 · Geofencing</p>
+            <h2 className="text-2xl font-black text-white tracking-tight">Location verification</h2>
+            {geofenceIsAuxiliary ? (
+              <p className="mt-2 text-xs text-slate-400 max-w-xl leading-5">
+                You confirmed the venue visually — geofencing is <span className="text-emerald-300 font-bold">auxiliary</span>. It adds corroborating data for court, but it is not the primary proof here.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-amber-300/80 max-w-xl leading-5">
+                The venue was not visually confirmed. Geofencing is now the <span className="font-bold">primary location proof</span>. If there is a discrepancy here, this case cannot proceed.
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className={cn("rounded-xl border p-4", geoOk ? "border-emerald-500/30 bg-emerald-500/5" : "border-red-500/30 bg-red-500/5")}>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">GPS Continuity</p>
+              <div className="flex items-center gap-2">
+                <div className={cn("h-4 w-4 rounded-full flex items-center justify-center",
+                  geoOk ? "bg-emerald-500" : "bg-red-500/80")}>
+                  {geoOk ? <CheckCircle2 className="h-3 w-3 text-white" /> : <X className="h-3 w-3 text-white" />}
+                </div>
+                <p className={cn("text-sm font-black", geoOk ? "text-emerald-300" : "text-red-300")}>
+                  {geoOk ? 'Passed' : 'Failed'}
+                </p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Venue Signal</p>
+              <p className="text-sm font-black text-white">{humanizeToken(geoBucket)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Closest Distance</p>
+              <p className="text-sm font-black text-white">{closestMeters != null ? `${closestMeters.toFixed(0)} m` : 'n/a'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Within Envelope</p>
+              <p className={cn("text-sm font-black", withinEnvelope === true ? "text-emerald-300" : withinEnvelope === false ? "text-red-300" : "text-slate-500")}>
+                {withinEnvelope === true ? 'Yes' : withinEnvelope === false ? 'No' : 'Unknown'}
+              </p>
+            </div>
+          </div>
+
+          {!geoOk && !geofenceIsAuxiliary && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5">
+              <p className="text-sm font-black text-red-300 mb-1">Geofence failure — venue unverifiable</p>
+              <p className="text-xs text-slate-400 leading-5 mb-4">
+                The admin did not confirm the venue visually and the GPS data has a discrepancy. There is insufficient location proof to proceed. Send back to agent for a clean capture with confirmed venue entry geolocation.
+              </p>
+              <button
+                onClick={() => onSendToAgentQueue(caseData.id)}
+                className="px-4 py-2.5 rounded-lg bg-red-500/20 border border-red-500/40 text-xs font-black text-red-300 uppercase tracking-widest hover:bg-red-500/30 transition-colors"
+              >
+                Add to Agent Queue
+              </button>
+            </div>
+          )}
+
+          {(geoOk || geofenceIsAuxiliary) && (
+            <div className="flex justify-end pt-2">
+              <button onClick={next} className="px-5 py-2.5 rounded-lg bg-blue-600 text-xs font-black text-white uppercase tracking-widest hover:bg-blue-500 transition-colors">
+                Proceed to Investigation →
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── 04 INVESTIGATION ──────────────────────────────────────────────
+    if (step === 'investigation') {
+      const analysis = caseData.analysis;
+      const sourceAssessment = caseData.sourceAssessment;
+      const signalSummary = caseData.signalSummary;
+      // Production cases: all signal data lives in analysis.source_analysis and
+      // analysis.visual_analysis. caseData.sourceAssessment is null for these.
+      const sourceAnalysis = analysis?.source_analysis as Record<string, unknown> | null | undefined;
+      const visualAnalysis = analysis?.visual_analysis as Record<string, unknown> | null | undefined;
+      const forensicSummary = analysis?.forensic_summary as Record<string, unknown> | null | undefined;
+
+      // Score is 0-100 in source_analysis; normalize to 0-1 for all computations
+      const rawScore = (sourceAnalysis?.score as number | undefined) ?? sourceAssessment?.score ?? signalSummary?.sourceScore ?? 0;
+      const score = rawScore > 1 ? rawScore / 100 : rawScore;
+      const confidence = (sourceAnalysis?.confidence as number | undefined) ?? sourceAssessment?.confidence ?? 0;
+      const sourceClass = (sourceAnalysis?.sourceClass as string | undefined) || sourceAssessment?.sourceClass || signalSummary?.sourceClass || 'inconclusive';
+      const explanations: string[] = Array.isArray(sourceAnalysis?.explanation)
+        ? (sourceAnalysis.explanation as string[])
+        : Array.isArray(sourceAssessment?.explanation) ? (sourceAssessment.explanation as string[])
+        : typeof sourceAssessment?.explanation === 'string' ? [sourceAssessment.explanation] : [];
+
+      // visual_analysis holds the vision-model signals (equipment, venue identity, OCR)
+      const equipment = (visualAnalysis?.visibleEquipment as string[] | undefined) ?? [];
+      const venueIdentitySignals = (visualAnalysis?.venueIdentitySignals as string[] | undefined) ?? [];
+      const playbackContext = (visualAnalysis?.playbackContext as string | undefined) ?? '';
+      // signageOcr can be a nested object or a string depending on pipeline version
+      const signageOcrRaw = visualAnalysis?.signageOcr;
+      const signageOcr = typeof signageOcrRaw === 'string' ? signageOcrRaw
+        : (signageOcrRaw as Record<string, unknown> | undefined)?.detectedSignageText as string ?? '';
+      const sourceAnalysisSummary = (visualAnalysis?.summary as string | undefined) ?? (sourceAnalysis?.explanation as string[] | undefined)?.[0] ?? '';
+      // Per-frame AI observations (even when no image assets exist)
+      const frameObservations = (visualAnalysis?.frameObservations as Array<{timestampSeconds: number; observation: string}> | undefined) ?? [];
+      // Deduplicated frame images served as /media/ URLs
+      const frameImages = [...new Set(allVenueImages)].filter(Boolean);
+
+      // Overall verdict colour
+      const verdictStrong = score >= 0.7 && confidence >= 0.6;
+      const verdictWeak = score < 0.4 || confidence < 0.35;
+      const verdictColor = verdictStrong ? 'emerald' : verdictWeak ? 'red' : 'amber';
+      const verdictColorMap: Record<string, { border: string; bg: string; text: string; dot: string }> = {
+        emerald: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-300', dot: 'bg-emerald-500' },
+        amber:   { border: 'border-amber-500/30',   bg: 'bg-amber-500/10',   text: 'text-amber-300',   dot: 'bg-amber-500'   },
+        red:     { border: 'border-red-500/30',      bg: 'bg-red-500/10',     text: 'text-red-300',     dot: 'bg-red-500'     },
+      };
+      const vc = verdictColorMap[verdictColor];
+
+      // Plain-English verdict summary
+      const verdictHeadline =
+        verdictStrong ? `The algorithm is confident this is a live performance at a commercial venue.`
+        : verdictWeak  ? `The algorithm could not confirm a live performance — evidence is too weak to proceed.`
+        :                `The algorithm found partial evidence of a live performance. Analyst review required.`;
+
+      const verdictSubtext =
+        verdictStrong ? `All major signals align. The audio was captured in a real venue with PA equipment. This is actionable.`
+        : verdictWeak  ? `One or more critical signals are missing or contradictory. Do not advance without stronger corroboration.`
+        :                `Some signals are present but not conclusive. Review the evidence below and use your judgment.`;
+
+      // Evidence cards — each one a "gotcha" check the algorithm ran
+      type EvidenceCard = {
+        title: string;
+        what: string;       // what we looked for
+        found: string;      // what we actually detected
+        why: string;        // plain-English why this matters
+        gotcha?: string;    // red-flag note if suspicious
+        status: 'pass' | 'fail' | 'partial' | 'missing';
+      };
+
+      const evidenceCards: EvidenceCard[] = [
+        {
+          title: 'Live source probability',
+          what: 'Is the audio a live performance or a recorded playback (e.g. streaming from Spotify)?',
+          found: `${humanizeToken(sourceClass)} · ${(score * 100).toFixed(0)}% certainty`,
+          why: 'A live source means someone is performing music in a real space. A recorded source could mean the phone was used near a TV or a DJ playing a pre-recorded set — both of which may still infringe, but via different licensing routes.',
+          gotcha: score < 0.5 ? 'Score is below 50%. The classifier is not confident. Corroborating evidence is essential before escalation.' : undefined,
+          status: score >= 0.7 ? 'pass' : score >= 0.4 ? 'partial' : 'fail',
+        },
+        {
+          title: 'Classifier confidence',
+          what: 'How certain is the algorithm about its own verdict?',
+          found: confidence >= 0.7 ? `High confidence (${(confidence * 100).toFixed(0)}%) — verdict is reliable` : confidence >= 0.4 ? `Medium confidence (${(confidence * 100).toFixed(0)}%) — treat as probable, not certain` : `Low confidence (${(confidence * 100).toFixed(0)}%) — verdict unreliable`,
+          why: 'The classifier scores its own certainty separately from the verdict. A high-score verdict with low confidence is a red flag — it means the model is guessing. Both need to be high to trust the output.',
+          gotcha: confidence < 0.5 ? 'Low confidence means the classifier hit an ambiguous pattern. This case needs human review before action.' : undefined,
+          status: confidence >= 0.7 ? 'pass' : confidence >= 0.4 ? 'partial' : 'fail',
+        },
+        {
+          title: 'Acoustic venue fingerprint',
+          what: 'Does the room sound like a known commercial venue (reverb, crowd noise, PA reflections)?',
+          found: venueIdentitySignals.length > 0 ? `${venueIdentitySignals.length} venue signal(s) detected: ${venueIdentitySignals.slice(0, 3).join(' · ')}` : 'No venue acoustic signals detected',
+          why: 'Venues have distinct acoustic signatures — high ceilings, crowd murmur, echo patterns from hard walls. These are hard to fake on a phone recording. If the algorithm detects them, it strongly suggests a real venue was present.',
+          gotcha: venueIdentitySignals.length === 0 ? 'No acoustic signature means we cannot confirm this was a large commercial space from audio alone.' : undefined,
+          status: venueIdentitySignals.length >= 2 ? 'pass' : venueIdentitySignals.length === 1 ? 'partial' : 'missing',
+        },
+        {
+          title: 'Audio equipment detection',
+          what: 'Is there PA gear, mixing desks, or amplification equipment audible in the recording?',
+          found: equipment.length > 0 ? `Detected: ${equipment.join(', ')}` : 'No audio equipment signatures found',
+          why: 'Venues use PA systems, amplifiers, and mixers. These leave spectral fingerprints — frequency boosts, compression artefacts, speaker distortion. Detecting them confirms professional audio playback, not a casual home speaker.',
+          gotcha: equipment.length === 0 ? 'No equipment detected. This does not rule out a live venue, but it removes one corroborating signal.' : undefined,
+          status: equipment.length >= 2 ? 'pass' : equipment.length === 1 ? 'partial' : 'missing',
+        },
+        {
+          title: 'Playback context',
+          what: 'What situation was the audio captured in — live band, DJ set, background music, streaming?',
+          found: playbackContext || 'Not determined',
+          why: 'Context tells us the type of infringement. A DJ set using pre-recorded tracks is a different violation from a live band. The playback context shapes which rights bodies to notify and what licence is required.',
+          status: playbackContext ? 'pass' : 'missing',
+        },
+        {
+          title: 'Visible signage / text in frames',
+          what: 'Did OCR find any venue name, license notice, or promotional text in the captured video frames?',
+          found: signageOcr ? `"${signageOcr.slice(0, 120)}"` : 'No readable text extracted from frames',
+          why: 'Signage is critical corroboration. A venue name on a banner, a ticket price on a poster, or a "No Recording" notice all anchor the capture to a real place and time. This is the kind of evidence that holds up in a dispute.',
+          gotcha: signageOcr && signageOcr.toLowerCase().includes('stream') ? 'Detected text may reference streaming — review carefully to ensure this is a live event.' : undefined,
+          status: signageOcr ? 'pass' : 'missing',
+        },
+      ];
+
+      // Demucs stem interpretation
+      const vocalStemArtifact = caseData.audioDeconstruction?.artifacts.find(a => a.stem === 'vocals');
+      const hasStemData = demucsComplete && caseData.audioDeconstruction;
+
+      const statusIcon = (s: EvidenceCard['status']) =>
+        s === 'pass'    ? <span className="text-emerald-400 text-base leading-none">✓</span>
+        : s === 'fail'  ? <span className="text-red-400 text-base leading-none">✗</span>
+        : s === 'partial' ? <span className="text-amber-400 text-base leading-none">~</span>
+        : <span className="text-slate-600 text-base leading-none">·</span>;
+
+      const statusBorder = (s: EvidenceCard['status']) =>
+        s === 'pass' ? 'border-emerald-500/25 bg-emerald-500/5'
+        : s === 'fail' ? 'border-red-500/25 bg-red-500/5'
+        : s === 'partial' ? 'border-amber-500/25 bg-amber-500/5'
+        : 'border-white/5 bg-white/[0.02]';
+
+      // SVG bars
+      const svgBarH = 18;
+      const svgBarGap = 8;
+      const svgLabelW = 136;
+      const svgTotalW = 340;
+      const svgBars = [
+        { label: 'Live source score', value: score, color: '#3b82f6' },
+        { label: 'Classifier confidence', value: confidence, color: '#8b5cf6' },
+        { label: 'Venue signals', value: Math.min(venueIdentitySignals.length / 4, 1), color: '#10b981' },
+        { label: 'Equipment found', value: Math.min(equipment.length / 3, 1), color: '#f59e0b' },
+        { label: 'Context resolved', value: playbackContext ? 1 : 0, color: '#6366f1' },
+        { label: 'Signage / OCR', value: signageOcr ? 1 : 0, color: '#ec4899' },
+      ];
+      const svgTotalH = svgBars.length * (svgBarH + svgBarGap);
+
+      return (
+        <div className="space-y-6">
+
+          {/* Header */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400 mb-1">Step 04 · Investigation</p>
+            <h2 className="text-2xl font-black text-white tracking-tight">What the algorithm found — and why</h2>
+            <p className="mt-2 text-xs text-slate-400 max-w-2xl leading-6">
+              This page walks through every test the system ran on the captured audio and video. Each check has a plain-English explanation of what it looked for, what it found, and whether that finding strengthens or weakens the case.
+            </p>
+          </div>
+
+          {/* Verdict banner */}
+          <div className={cn("rounded-xl border p-5", vc.border, vc.bg)}>
+            <div className="flex items-start gap-4">
+              <div className={cn("mt-1 h-3 w-3 rounded-full shrink-0", vc.dot)} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 flex-wrap mb-2">
+                  <p className={cn("text-base font-black", vc.text)}>{verdictHeadline}</p>
+                  <span className={cn("text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border", vc.border, vc.text)}>
+                    {humanizeToken(sourceClass)} · {(score * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 leading-5">{verdictSubtext}</p>
+                {sourceAnalysisSummary && (
+                  <p className="mt-3 text-xs text-slate-300 leading-6 border-t border-white/10 pt-3">{sourceAnalysisSummary}</p>
+                )}
+                {analysis?.ai_review_brief?.one_line && (
+                  <p className="mt-2 text-xs text-slate-300 leading-6 italic">"{analysis.ai_review_brief.one_line}"</p>
+                )}
+                {explanations.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-white/10 space-y-1">
+                    {explanations.map((ex, i) => (
+                      <p key={i} className="text-[11px] text-slate-400 leading-5">→ {ex}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Signal strength graph */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Evidence strength at a glance</p>
+            <p className="text-[10px] text-slate-600 mb-4 leading-4">Each bar shows how strongly one signal contributed to the verdict. Longer = stronger evidence.</p>
+            <svg width="100%" viewBox={`0 0 ${svgTotalW} ${svgTotalH}`} style={{ display: 'block' }}>
+              {svgBars.map((bar, i) => {
+                const y = i * (svgBarH + svgBarGap);
+                const maxBarW = svgTotalW - svgLabelW - 44;
+                const barW = Math.max(bar.value > 0 ? 4 : 0, maxBarW * bar.value);
+                return (
+                  <g key={i} transform={`translate(0,${y})`}>
+                    <text x={0} y={svgBarH - 4} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif" fontWeight="700">
+                      {bar.label.toUpperCase()}
+                    </text>
+                    <rect x={svgLabelW} y={2} width={maxBarW} height={svgBarH - 4} rx={3} fill="#0f172a" />
+                    {barW > 0 && <rect x={svgLabelW} y={2} width={barW} height={svgBarH - 4} rx={3} fill={bar.color} opacity={0.75} />}
+                    <text x={svgLabelW + maxBarW + 6} y={svgBarH - 4} fontSize={8.5} fill="#94a3b8" fontFamily="system-ui, sans-serif" fontWeight="700">
+                      {`${(bar.value * 100).toFixed(0)}%`}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+
+          {/* Evidence cards */}
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Detailed evidence checks</p>
+            <p className="text-[10px] text-slate-600 mb-4 leading-4">Every check the algorithm ran, explained in plain English. Red flags are highlighted.</p>
+            <div className="space-y-3">
+              {evidenceCards.map((card, i) => (
+                <div key={i} className={cn("rounded-xl border p-4", statusBorder(card.status))}>
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 w-5 shrink-0 flex items-center justify-center">{statusIcon(card.status)}</div>
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-xs font-black text-white">{card.title}</p>
+                        <span className={cn("text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border",
+                          card.status === 'pass' ? "border-emerald-500/30 text-emerald-400"
+                          : card.status === 'fail' ? "border-red-500/30 text-red-400"
+                          : card.status === 'partial' ? "border-amber-500/30 text-amber-400"
+                          : "border-slate-700 text-slate-500"
+                        )}>
+                          {card.status === 'pass' ? 'Confirmed' : card.status === 'fail' ? 'Failed' : card.status === 'partial' ? 'Partial' : 'Not detected'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-1.5">
+                        <div>
+                          <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">What we tested</p>
+                          <p className="text-[11px] text-slate-400 leading-5">{card.what}</p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">What we found</p>
+                          <p className="text-[11px] text-slate-200 leading-5 font-medium">{card.found}</p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">Why it matters</p>
+                          <p className="text-[11px] text-slate-400 leading-5">{card.why}</p>
+                        </div>
+                        {card.gotcha && (
+                          <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2">
+                            <p className="text-[8px] font-black text-red-400 uppercase tracking-widest mb-0.5">⚠ Red flag</p>
+                            <p className="text-[11px] text-red-300 leading-5">{card.gotcha}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Demucs stem analysis */}
+          {hasStemData && (
+            <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-violet-400 mb-1">Audio stem deconstruction (Demucs)</p>
+              <p className="text-[10px] text-slate-500 mb-4 leading-4">
+                Demucs is a machine learning model that separates audio into its component layers — vocals, bass, drums, and other instruments. This helps us confirm whether a song was being performed or played back, and isolate the vocal track for ID.
+              </p>
+              {vocalStemArtifact && (
+                <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-4 py-3 mb-3">
+                  <p className="text-[9px] font-black text-violet-300 uppercase tracking-widest mb-1">Key finding — vocal stem isolated</p>
+                  <p className="text-[11px] text-slate-300 leading-5">
+                    A clean vocal track was successfully extracted. This is the most important stem for song identification — it can be compared against ISRC databases to match the specific recording being used.
+                  </p>
+                  <a href={vocalStemArtifact.url} target="_blank" rel="noreferrer"
+                    className="inline-block mt-2 text-[9px] font-black text-violet-300 uppercase tracking-widest hover:text-violet-200">
+                    Listen to isolated vocals →
+                  </a>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                {caseData.audioDeconstruction!.artifacts.map(artifact => (
+                  <div key={artifact.assetId} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-black/30 px-3 py-2.5">
+                    <div>
+                      <p className="text-[9px] font-black text-white capitalize">{artifact.stem}</p>
+                      <p className="text-[9px] text-slate-500 mt-0.5">
+                        {artifact.stem === 'vocals' ? 'Lead voice / singing — key for song ID'
+                        : artifact.stem === 'bass' ? 'Low-frequency foundation — confirms live band'
+                        : artifact.stem === 'drums' ? 'Percussion — confirms live drums vs programmed'
+                        : 'Other instruments — strings, keys, synths'}
+                      </p>
+                    </div>
+                    <a href={artifact.url} target="_blank" rel="noreferrer"
+                      className="text-[9px] font-black text-violet-300 uppercase tracking-widest hover:text-violet-200 shrink-0">
+                      Play
+                    </a>
+                  </div>
+                ))}
+              </div>
+              {caseData.audioDeconstruction!.summary && (
+                <p className="mt-3 text-[11px] text-slate-400 leading-5">{caseData.audioDeconstruction!.summary}</p>
+              )}
+            </div>
+          )}
+
+          {/* Forensic / visual AI output */}
+          {(forensicSummary || visualAnalysis) && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">AI forensic analysis</p>
+                <p className="text-[10px] text-slate-600 leading-4">These notes were generated by the AI backend after running a deeper pass on the capture. They surface patterns a human might miss.</p>
+              </div>
+              {visualAnalysis && (
+                <div>
+                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Visual AI</p>
+                  <p className="text-[11px] text-slate-400 leading-5">{typeof visualAnalysis === 'string' ? visualAnalysis : JSON.stringify(visualAnalysis).slice(0, 400)}</p>
+                </div>
+              )}
+              {forensicSummary && (
+                <div>
+                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Forensic</p>
+                  <p className="text-[11px] text-slate-400 leading-5">{typeof forensicSummary === 'string' ? forensicSummary : JSON.stringify(forensicSummary).slice(0, 400)}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Speaker frame verification — images when available, AI observations always */}
+          {(frameImages.length > 0 || frameObservations.length > 0) && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-amber-400 mb-1">Frame verification — possible speaker / PA locations</p>
+              <p className="text-[10px] text-slate-500 mb-1 leading-5">
+                The system extracted these frames from the captured video and ran visual AI on each one. Frames showing speakers, PA rigs, amplifiers, or mixing desks provide visual proof of a commercial audio setup.
+              </p>
+              <p className="text-[10px] text-amber-500/70 mb-4 leading-4">
+                Mark each frame: <strong className="text-amber-300">Speaker visible</strong> = you can see audio equipment. <strong className="text-slate-400">No equipment</strong> = crowd, stage, or unrelated content. Your tags improve the visual detector.
+              </p>
+              {frameImages.length > 0 ? (
+                <div className="grid grid-cols-3 gap-3">
+                  {frameImages.map((img, i) => {
+                    const obs = frameObservations[i];
+                    const vote = frameVotes[img] ?? null;
+                    return (
+                      <div key={i} className={cn("rounded-lg overflow-hidden border transition-colors",
+                        vote === true ? "border-emerald-500" : vote === false ? "border-slate-700" : "border-white/10"
+                      )}>
+                        <img src={img} alt={`Frame ${i + 1}`} className="w-full aspect-video object-cover block" />
+                        <div className="p-2 bg-black/50 space-y-1.5">
+                          <p className="text-[9px] text-slate-500 font-mono">
+                            Frame {i + 1}{obs?.timestampSeconds != null ? ` · ${obs.timestampSeconds.toFixed(1)}s` : ''}
+                          </p>
+                          {obs?.observation && (
+                            <p className="text-[9px] text-slate-400 leading-4">{obs.observation}</p>
+                          )}
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setFrameVotes(v => ({ ...v, [img]: true }))}
+                              className={cn("flex-1 py-1 rounded text-[8px] font-black uppercase tracking-widest border transition-colors",
+                                vote === true
+                                  ? "bg-emerald-500 border-emerald-500 text-white"
+                                  : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                              )}>
+                              Speaker visible
+                            </button>
+                            <button
+                              onClick={() => setFrameVotes(v => ({ ...v, [img]: false }))}
+                              className={cn("flex-1 py-1 rounded text-[8px] font-black uppercase tracking-widest border transition-colors",
+                                vote === false
+                                  ? "bg-slate-600 border-slate-600 text-white"
+                                  : "border-slate-700 text-slate-500 hover:bg-slate-800"
+                              )}>
+                              No equipment
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* No image assets yet — show AI per-frame observations as text cards */
+                <div className="space-y-2">
+                  <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-3 py-2 mb-3">
+                    <p className="text-[9px] text-amber-400/70 leading-4">Video frames were analysed by the visual AI but image files were not retained. The AI's per-frame observations are shown below.</p>
+                  </div>
+                  {frameObservations.map((obs, i) => (
+                    <div key={i} className="flex items-start gap-3 rounded-lg border border-white/5 bg-black/20 px-3 py-2.5">
+                      <span className="text-[9px] font-black text-slate-600 font-mono shrink-0 mt-0.5">{obs.timestampSeconds.toFixed(1)}s</span>
+                      <p className="text-[11px] text-slate-400 leading-5">{obs.observation}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {frameImages.length > 0 && Object.keys(frameVotes).length > 0 && (
+                <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-4">
+                  <p className="text-[10px] text-emerald-400">{Object.values(frameVotes).filter(v => v === true).length} frame(s) with equipment</p>
+                  <p className="text-[10px] text-slate-500">{Object.values(frameVotes).filter(v => v === false).length} frame(s) ruled out</p>
+                  <p className="text-[10px] text-slate-600">{frameImages.length - Object.keys(frameVotes).length} unreviewed</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Analyst verdict confirmation */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Your verdict — does the algorithm agree with what you see?</p>
+            <p className="text-[10px] text-slate-500 mb-4 leading-5">
+              You have reviewed all the evidence above. Does the algorithm's conclusion match your professional assessment? This helps improve model accuracy over time — disagreements are reviewed by the data team.
+            </p>
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 mb-4">
+              <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Algorithm verdict</p>
+              <p className="text-sm font-black text-white">{humanizeToken(sourceClass)} — {(score * 100).toFixed(0)}% live source probability, {(confidence * 100).toFixed(0)}% confidence</p>
+              <p className="text-[10px] text-slate-400 mt-1 leading-4">{verdictHeadline}</p>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => setVerdictFeedback('agree')}
+                className={cn("px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-colors",
+                  verdictFeedback === 'agree'
+                    ? "bg-emerald-500 border-emerald-500 text-white"
+                    : "border-emerald-500/30 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+                )}>
+                I agree — algorithm is correct
+              </button>
+              <button
+                onClick={() => setVerdictFeedback('disagree')}
+                className={cn("px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-colors",
+                  verdictFeedback === 'disagree'
+                    ? "bg-red-500 border-red-500 text-white"
+                    : "border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20"
+                )}>
+                I disagree — this is wrong
+              </button>
+            </div>
+            {verdictFeedback && (
+              <div className={cn("mt-3 rounded-lg border px-3 py-2",
+                verdictFeedback === 'agree' ? "border-emerald-500/20 bg-emerald-500/5" : "border-red-500/20 bg-red-500/5"
+              )}>
+                <p className="text-[10px] leading-5 text-slate-400">
+                  {verdictFeedback === 'agree'
+                    ? 'Logged. Your agreement is recorded alongside this case ID. It will be used to validate model calibration.'
+                    : 'Logged. Your disagreement has been flagged for manual review. The data team will examine this case and retrain the classifier if needed.'}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Chain of custody */}
+          {caseData.chainOfCustody.length > 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Chain of custody</p>
+              <p className="text-[10px] text-slate-600 mb-4 leading-4">
+                Every event that touched this capture is logged here with actor, timestamp, and status. This is the audit trail — it proves the evidence was not tampered with between capture and review.
+              </p>
+              <div className="space-y-2">
+                {caseData.chainOfCustody.map((entry, i) => (
+                  <div key={i} className="flex items-start gap-3 py-2.5 border-b border-white/5 last:border-0">
+                    <div className={cn("mt-1.5 h-2 w-2 rounded-full shrink-0",
+                      entry.status === 'Verified' ? "bg-emerald-500" : entry.status === 'Failed' ? "bg-red-500" : "bg-amber-500")} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-black text-white">{entry.event}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{entry.actor} · {entry.timestamp}</p>
+                    </div>
+                    <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded border shrink-0",
+                      entry.status === 'Verified' ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+                        : entry.status === 'Failed' ? "border-red-500/30 text-red-400 bg-red-500/10"
+                        : "border-amber-500/30 text-amber-400 bg-amber-500/10"
+                    )}>{entry.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <button onClick={next} className="px-5 py-2.5 rounded-lg bg-blue-600 text-xs font-black text-white uppercase tracking-widest hover:bg-blue-500 transition-colors">
+              Proceed to Music Rights →
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── 05 MUSIC RIGHTS ───────────────────────────────────────────────
+    if (step === 'rights') {
+      const bodies = mandateProfile.bodies;
+      const licenseStatus = caseData.contract?.license_verdict?.status as string | undefined;
+
+      return (
+        <div className="space-y-6">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400 mb-1">Step 05 · Music Rights</p>
+            <h2 className="text-2xl font-black text-white tracking-tight">Rights, registration &amp; fine</h2>
+            <p className="mt-2 text-xs text-slate-400 max-w-xl leading-5">
+              Verify which rights body governs this track, confirm membership and licensing status, and calculate the recoverable fine.
+            </p>
+          </div>
+
+          {/* Rights body */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Rights body</p>
+              <div className="flex gap-2 flex-wrap">
+                {bodies.length > 0 ? bodies.map(b => (
+                  <span key={b} className="px-3 py-1 rounded-lg border border-blue-500/30 bg-blue-500/10 text-xs font-black text-blue-300">{b}</span>
+                )) : (
+                  <span className="text-sm font-black text-red-300">Unmapped</span>
+                )}
+              </div>
+              {mandateProfile.label && (
+                <p className="mt-2 text-[11px] text-slate-400">{mandateProfile.label}</p>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">ISRC</p>
+              <p className="text-sm font-black font-mono text-white">{caseData.songAssessment.isrc || 'Missing'}</p>
+              <p className="mt-1 text-[10px] text-slate-500">{caseData.songAssessment.rightsAssociation || 'Rights pending'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Label</p>
+              <p className="text-sm font-black text-white">{caseData.songAssessment.labelOwner || caseData.musicLabel || 'Unknown'}</p>
+            </div>
+            <div className={cn("rounded-xl border p-4", licenseStatus === 'UNLICENSED' ? "border-red-500/30 bg-red-500/5" : licenseStatus === 'LICENSED' ? "border-emerald-500/30 bg-emerald-500/5" : "border-slate-800 bg-slate-900")}>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">License status</p>
+              <p className={cn("text-sm font-black", licenseStatus === 'UNLICENSED' ? "text-red-300" : licenseStatus === 'LICENSED' ? "text-emerald-300" : "text-slate-400")}>
+                {licenseStatus || 'Not assessed'}
+              </p>
+            </div>
+          </div>
+
+          {/* Violation mandate detail */}
+          {mandateProfile.evidenceNeed && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-amber-500 mb-2">Violation posture</p>
+              <p className="text-xs text-slate-300 leading-5">{mandateProfile.evidenceNeed}</p>
+            </div>
+          )}
+
+          {/* Artist / label contact nudge */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-4">Outreach actions</p>
+            <div className="grid grid-cols-2 gap-3">
+              {caseData.location.email && (
+                <a href={`mailto:${caseData.location.email}?subject=Copyright%20Infringement%20Notice%20-%20${encodeURIComponent(caseData.songAssessment.title)}`}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-950 text-xs font-black text-slate-300 hover:text-white hover:border-slate-600 transition-colors">
+                  <Mail className="h-3.5 w-3.5" />
+                  Notify venue
+                </a>
+              )}
+              <button className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-blue-500/30 bg-blue-500/10 text-xs font-black text-blue-300 hover:bg-blue-500/15 transition-colors">
+                <Music className="h-3.5 w-3.5" />
+                Invite artist to {bodies[0] || 'IPRS'}
+              </button>
+              <button className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-950 text-xs font-black text-slate-300 hover:text-white transition-colors">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Run license check
+              </button>
+              <button className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-950 text-xs font-black text-slate-300 hover:text-white transition-colors">
+                <ExternalLink className="h-3.5 w-3.5" />
+                Notify label
+              </button>
+            </div>
+          </div>
+
+          {/* Fine estimate */}
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500 mb-2">Fine estimate</p>
+            <p className="text-4xl font-black text-white tracking-tight">₹{caseData.recoverableValue.toLocaleString()}</p>
+            <p className="mt-1 text-[10px] text-slate-400">Based on past offences ({caseData.pastOffences}), venue capacity context, and infringement duration.</p>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button onClick={next} className="px-5 py-2.5 rounded-lg bg-blue-600 text-xs font-black text-white uppercase tracking-widest hover:bg-blue-500 transition-colors">
+              Proceed to Final →
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── 06 FINAL ──────────────────────────────────────────────────────
+    if (step === 'final') {
+      const gatesPassedCount = immutableGates.filter(g => caseData.trustGates[g.key]).length;
+      return (
+        <div className="space-y-6">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400 mb-1">Step 06 · Final</p>
+            <h2 className="text-2xl font-black text-white tracking-tight">Review complete — take action</h2>
+          </div>
+
+          {/* Case brief */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 space-y-4">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Case brief</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Venue</p>
+                <p className="text-sm font-black text-white">{caseData.location.name}</p>
+                <p className="text-[10px] text-slate-500">{caseData.location.city}</p>
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Song</p>
+                <p className="text-sm font-black text-white">{caseData.songAssessment.title}</p>
+                <p className="text-[10px] text-slate-500">{caseData.songAssessment.artists.join(', ')}</p>
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Rights body</p>
+                <p className="text-sm font-black text-white">{mandateProfile.bodies.join(' / ') || 'Unmapped'}</p>
+                <p className="text-[10px] text-slate-500">{caseData.songAssessment.isrc}</p>
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Integrity gates</p>
+                <p className={cn("text-sm font-black", gatesPassedCount === 4 ? "text-emerald-300" : "text-amber-300")}>{gatesPassedCount}/4 passed{immutableOverride ? ' (override)' : ''}</p>
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Venue confirmed</p>
+                <p className={cn("text-sm font-black", venueRecognized === true ? "text-emerald-300" : venueRecognized === false ? "text-red-300" : "text-slate-500")}>
+                  {venueRecognized === true ? 'Yes — by admin' : venueRecognized === false ? 'Not confirmed' : 'Skipped'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Song confirmed</p>
+                <p className={cn("text-sm font-black", songRecognized === true ? "text-emerald-300" : songRecognized === false ? "text-red-300" : "text-slate-500")}>
+                  {songRecognized === true ? 'Yes — by admin' : songRecognized === false ? 'Not confirmed' : 'Skipped'}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-white/5 flex items-center justify-between">
+              <div>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Recoverable amount</p>
+                <p className="text-3xl font-black text-white">₹{caseData.recoverableValue.toLocaleString()}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Past offences</p>
+                <p className="text-2xl font-black text-white">{caseData.pastOffences}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Final actions */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => onUpdateStage(caseData.id, 'Ready For Legal', 'Admin review complete — sent to litigation.', 'Lawyer')}
+              className="flex flex-col gap-1 p-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors text-left"
+            >
+              <p className="text-xs font-black text-emerald-300 uppercase tracking-widest">Send to Litigation</p>
+              <p className="text-[11px] text-slate-400 leading-4">Case is legally ready. Escalate for enforcement.</p>
+            </button>
+            <button
+              onClick={() => onSendToAgentQueue(caseData.id)}
+              className="flex flex-col gap-1 p-5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 transition-colors text-left"
+            >
+              <p className="text-xs font-black text-amber-300 uppercase tracking-widest">Add to Agent Queue</p>
+              <p className="text-[11px] text-slate-400 leading-4">Needs further proof or cross-verification in the field.</p>
+            </button>
+            <button
+              onClick={() => onUpdateStage(caseData.id, 'Monitor / Enrich', 'Admin review — added to permanent case vault for monitoring.')}
+              className="flex flex-col gap-1 p-5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/15 transition-colors text-left"
+            >
+              <p className="text-xs font-black text-blue-300 uppercase tracking-widest">Add to Case Vault</p>
+              <p className="text-[11px] text-slate-400 leading-4">Retain permanently. Monitor for repeat offences.</p>
+            </button>
+            <button
+              onClick={() => onUpdateStage(caseData.id, 'Closed', 'Admin review — insufficient evidence, case rejected.')}
+              className="flex flex-col gap-1 p-5 rounded-xl border border-red-500/30 bg-red-500/5 hover:bg-red-500/10 transition-colors text-left"
+            >
+              <p className="text-xs font-black text-red-300 uppercase tracking-widest">Reject &amp; Delete</p>
+              <p className="text-[11px] text-slate-400 leading-4">Evidence is insufficient. Close and discard.</p>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden bg-slate-950 text-slate-100">
+      {/* Step nav bar */}
+      <div className="flex items-center border-b border-white/10 bg-[#0d0d0f] px-6 py-3 gap-1 overflow-x-auto shrink-0">
+        {WIZARD_STEPS.map((s, i) => {
+          const isActive = s.id === step;
+          const isPast = i < stepIndex;
+          return (
+            <button
+              key={s.id}
+              onClick={() => goTo(s.id)}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all",
+                isActive ? "bg-blue-600 text-white" : isPast ? "text-emerald-400 hover:bg-white/5" : "text-slate-600 hover:text-slate-400 hover:bg-white/5"
+              )}
+            >
+              {isPast && !isActive && <CheckCircle2 className="h-3 w-3" />}
+              <span>{s.short}</span>
+              <span className="hidden sm:inline">{s.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Step content */}
+      <div className="flex-1 overflow-y-auto p-6 md:p-8 max-w-4xl w-full mx-auto">
+        {renderStep()}
+      </div>
+    </div>
+  );
+}
+
+// ── Venue Profile Dossier ─────────────────────────────────────────────────
+function VenueProfilePanel({ venueCases }: { venueCases: Case[] }) {
+  if (!venueCases.length) return null;
+  const venue = venueCases[0].location;
+
+  // Derive risk tier from case count + stage mix
+  const totalCases = venueCases.length;
+  const litCases = venueCases.filter(c => c.stage === 'Ready For Legal' || c.stage === 'Legal').length;
+  const closedCases = venueCases.filter(c => c.stage === 'Closed').length;
+  const activeCases = totalCases - closedCases;
+  const riskTier = totalCases >= 3 || litCases > 0 ? 'High' : totalCases === 2 ? 'Medium' : 'Low';
+  const riskColor = riskTier === 'High' ? { dot: 'bg-red-500', text: 'text-red-400', border: 'border-red-500/25', bg: 'bg-red-500/10' }
+    : riskTier === 'Medium' ? { dot: 'bg-amber-500', text: 'text-amber-400', border: 'border-amber-500/25', bg: 'bg-amber-500/10' }
+    : { dot: 'bg-emerald-500', text: 'text-emerald-400', border: 'border-emerald-500/25', bg: 'bg-emerald-500/10' };
+
+  // Collect all unique songs + stages
+  const uniqueSongs = [...new Set(venueCases.map(c => c.songAssessment.title).filter(Boolean))];
+
+  // Collect venue signals from any case that has visual/source analysis
+  const anyAnalysis = venueCases.find(c => c.analysis?.visual_analysis || c.analysis?.source_analysis);
+  const visualAnalysis = anyAnalysis?.analysis?.visual_analysis as Record<string, unknown> | undefined;
+  const sourceAnalysis = anyAnalysis?.analysis?.source_analysis as Record<string, unknown> | undefined;
+  const venueIdentitySignals = (visualAnalysis?.venueIdentitySignals as string[] | undefined) ?? [];
+  const visibleEquipment = (visualAnalysis?.visibleEquipment as string[] | undefined) ?? [];
+  const signageOcrRaw = visualAnalysis?.signageOcr;
+  const signageOcr = typeof signageOcrRaw === 'string' ? signageOcrRaw
+    : (signageOcrRaw as Record<string, unknown> | undefined)?.detectedSignageText as string ?? '';
+  const sourceClass = (sourceAnalysis?.sourceClass as string | undefined) ?? '';
+  const rawScore = (sourceAnalysis?.score as number | undefined) ?? 0;
+  const sourceScore = rawScore > 1 ? rawScore / 100 : rawScore;
+
+  // Stage badge
+  const stageBadge = (stage: string) => {
+    const s = stage.toLowerCase();
+    if (s.includes('legal')) return <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 bg-red-500/10">Litigation</span>;
+    if (s.includes('agent')) return <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-400 bg-amber-500/10">Agent</span>;
+    if (s.includes('closed')) return <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border border-slate-700 text-slate-500">Closed</span>;
+    return <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400 bg-blue-500/10">Active</span>;
+  };
+
+  return (
+    <div className="space-y-6 p-6 md:p-8 max-w-4xl w-full mx-auto">
+      {/* Venue identity header */}
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400 mb-1">Venue profile</p>
+        <h2 className="text-3xl font-black text-white tracking-tight">{venue.name}</h2>
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+          {venue.address && <span>{venue.address}</span>}
+          {venue.city && <span>· {venue.city}</span>}
+          {venue.phone && <span>· {venue.phone}</span>}
+        </div>
+      </div>
+
+      {/* Risk + stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className={cn("rounded-xl border p-4", riskColor.border, riskColor.bg)}>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Risk tier</p>
+          <div className="flex items-center gap-2">
+            <div className={cn("h-2.5 w-2.5 rounded-full", riskColor.dot)} />
+            <p className={cn("text-lg font-black", riskColor.text)}>{riskTier}</p>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Total captures</p>
+          <p className="text-lg font-black text-white">{totalCases}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Active cases</p>
+          <p className="text-lg font-black text-white">{activeCases}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Unique songs</p>
+          <p className="text-lg font-black text-white">{uniqueSongs.length}</p>
+        </div>
+      </div>
+
+      {/* Risk narrative */}
+      <div className={cn("rounded-xl border p-5", riskColor.border, riskColor.bg)}>
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Enforcement posture</p>
+        {riskTier === 'High' && (
+          <p className="text-sm text-white leading-6">
+            This venue is a <strong>repeat offender</strong>. {totalCases} separate captures have been logged. {litCases > 0 && `${litCases} case(s) have already been escalated to litigation.`} This establishment warrants immediate licensing outreach and escalation priority.
+          </p>
+        )}
+        {riskTier === 'Medium' && (
+          <p className="text-sm text-white leading-6">
+            This venue has <strong>multiple captures</strong> across different sessions. Two or more incidents suggest a pattern of unlicensed music use rather than a one-off event. A licensing outreach letter is recommended before escalation.
+          </p>
+        )}
+        {riskTier === 'Low' && (
+          <p className="text-sm text-white leading-6">
+            <strong>First capture</strong> at this venue. Review the evidence carefully before escalation — a single incident may warrant an advisory notice rather than immediate litigation.
+          </p>
+        )}
+      </div>
+
+      {/* Venue intel — acoustic + visual signals */}
+      {(venueIdentitySignals.length > 0 || visibleEquipment.length > 0 || signageOcr || sourceClass) && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-4">Venue intelligence — from captured evidence</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            {sourceClass && (
+              <div>
+                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-2">Audio source type</p>
+                <p className="text-sm font-black text-white mb-1">{humanizeToken(sourceClass)}</p>
+                <div className="h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
+                  <div className="h-full rounded-full bg-blue-500" style={{ width: `${(sourceScore * 100).toFixed(0)}%` }} />
+                </div>
+                <p className="text-[9px] text-slate-500 mt-1">{(sourceScore * 100).toFixed(0)}% certainty</p>
+              </div>
+            )}
+            {venueIdentitySignals.length > 0 && (
+              <div>
+                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-2">Venue identity signals</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {venueIdentitySignals.map((s, i) => (
+                    <span key={i} className="text-[9px] font-bold text-slate-300 bg-slate-800 border border-white/5 px-2 py-1 rounded-full">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {visibleEquipment.length > 0 && (
+              <div>
+                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-2">Equipment detected</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {visibleEquipment.map((e, i) => (
+                    <span key={i} className="text-[9px] font-bold text-violet-300 bg-violet-500/10 border border-violet-500/20 px-2 py-1 rounded-full">{e}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {signageOcr && (
+              <div>
+                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-2">Signage detected (OCR)</p>
+                <p className="text-xs text-slate-300 leading-5 italic">"{signageOcr.slice(0, 160)}"</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Case history timeline */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-4">Capture history — all incidents at this venue</p>
+        <div className="space-y-0">
+          {venueCases.map((c, i) => {
+            const sa = c.analysis?.source_analysis as Record<string, unknown> | undefined;
+            const srcClass = (sa?.sourceClass as string | undefined) ?? c.sourceAssessment?.sourceClass ?? c.signalSummary?.sourceClass ?? '';
+            return (
+              <div key={c.id} className={cn("flex items-start gap-4 py-4", i < venueCases.length - 1 && "border-b border-white/5")}>
+                {/* Timeline dot + line */}
+                <div className="flex flex-col items-center shrink-0 mt-1">
+                  <div className="h-2 w-2 rounded-full bg-blue-500" />
+                  {i < venueCases.length - 1 && <div className="w-px flex-1 bg-white/5 mt-1.5" style={{ minHeight: 24 }} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div>
+                      <p className="text-xs font-black text-white">{c.songAssessment.title || 'Unknown Track'}</p>
+                      {c.songAssessment.artists?.length > 0 && (
+                        <p className="text-[10px] text-slate-400">{c.songAssessment.artists.join(', ')}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {stageBadge(c.stage)}
+                    </div>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-3 text-[9px] text-slate-500">
+                    <span>{format(c.timestamp, 'MMM d yyyy, HH:mm')}</span>
+                    {srcClass && <span>· {humanizeToken(srcClass)}</span>}
+                    {c.songAssessment.isrc && <span>· ISRC: {c.songAssessment.isrc}</span>}
+                    {c.songAssessment.labelOwner && <span>· {c.songAssessment.labelOwner}</span>}
+                  </div>
+                  {/* Trust gate flags */}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {c.trustGates.payloadSignature && (
+                      <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">Signed</span>
+                    )}
+                    {c.trustGates.geofencingContinuity && (
+                      <span className="text-[8px] font-black text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded">GPS tracked</span>
+                    )}
+                    {c.trustGates.gpsTrackSigned && (
+                      <span className="text-[8px] font-black text-violet-400 bg-violet-500/10 border border-violet-500/20 px-1.5 py-0.5 rounded">GPS signed</span>
+                    )}
+                    {c.trustGates.venueCommitted && (
+                      <span className="text-[8px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">Venue committed</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Unique song list */}
+      {uniqueSongs.length > 1 && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-3">Songs played without licence at this venue</p>
+          <div className="space-y-1">
+            {uniqueSongs.map((title, i) => {
+              const c = venueCases.find(cx => cx.songAssessment.title === title);
+              return (
+                <div key={i} className="flex items-center gap-3 py-1.5 border-b border-white/5 last:border-0">
+                  <span className="text-[9px] font-black text-slate-700 font-mono w-4 shrink-0">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-white truncate">{title}</p>
+                    {c?.songAssessment.artists?.[0] && (
+                      <p className="text-[9px] text-slate-500">{c.songAssessment.artists[0]}</p>
+                    )}
+                  </div>
+                  {c?.songAssessment.isrc && (
+                    <p className="text-[9px] text-slate-600 font-mono shrink-0">{c.songAssessment.isrc}</p>
+                  )}
+                  {c?.songAssessment.rightsAssociation && (
+                    <p className="text-[9px] text-slate-500 shrink-0 hidden sm:block">{c.songAssessment.rightsAssociation}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AuthorityVenueEvidencePage({
   cases,
   selectedCaseId,
@@ -3273,6 +4685,7 @@ function AuthorityVenueEvidencePage({
 }) {
   const selectedCase = cases.find((caseData) => caseData.id === selectedCaseId) || cases[0];
   const [expandedVaultIds, setExpandedVaultIds] = useState<Set<string>>(() => new Set());
+  const [mainTab, setMainTab] = useState<'venue' | 'case'>('venue');
 
   const venueCases = useMemo(() => {
     if (!selectedCase) return [];
@@ -3341,9 +4754,23 @@ function AuthorityVenueEvidencePage({
     });
   };
 
+  const handleSendToAgentQueue = (caseId: string) => {
+    const vault = selectedCase.evidenceVaults[0];
+    if (vault) onRequestMoreProof(caseId, vault.id);
+    onUpdateStage(caseId, 'Agent Assignment', 'Sent to agent queue from case review wizard.', 'Agent');
+    setListTab('active');
+  };
+
+  // Switch to case tab when the user clicks a case in the sidebar
+  const handleSelectCase = (caseId: string) => {
+    selectCase(caseId);
+    setMainTab('case');
+  };
+
   return (
-    <div className="grid h-full grid-cols-[260px_minmax(0,0.9fr)_260px] overflow-hidden bg-slate-950 text-slate-100 max-xl:grid-cols-1 max-xl:overflow-y-auto">
-      <aside className="border-r border-slate-800 bg-slate-900/50 max-xl:border-r-0">
+    <div className="flex h-full overflow-hidden bg-slate-950 text-slate-100">
+      {/* Left sidebar — venue + case selector */}
+      <aside className="w-60 border-r border-slate-800 bg-slate-900/50 flex flex-col shrink-0">
         <div className="border-b border-slate-800 p-4">
           <button
             type="button"
@@ -3353,167 +4780,92 @@ function AuthorityVenueEvidencePage({
             <ArrowRight className="h-3 w-3 rotate-180" />
             Authority queue
           </button>
-          <p className="text-[9px] font-black uppercase tracking-[0.22em] text-blue-400">Venue evidence</p>
-          <h2 className="mt-2 text-xl font-black tracking-tight text-white">{selectedCase.location.name}</h2>
-          <p className="mt-2 line-clamp-3 text-[11px] font-medium leading-4 text-slate-400">{selectedCase.location.address}</p>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2.5">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Cases</p>
-              <p className="mt-1 text-lg font-black text-white">{venueCases.length}</p>
-            </div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2.5">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Packages</p>
-              <p className="mt-1 text-lg font-black text-white">{packageCount}</p>
-            </div>
-          </div>
+          {/* Venue overview button */}
+          <button
+            type="button"
+            onClick={() => setMainTab('venue')}
+            className={cn(
+              "w-full text-left rounded-lg px-3 py-2.5 mb-3 border transition-colors",
+              mainTab === 'venue'
+                ? "border-blue-500/30 bg-blue-500/10"
+                : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
+            )}
+          >
+            <p className="text-[9px] font-black uppercase tracking-[0.22em] text-blue-400 mb-1">Venue evidence</p>
+            <h2 className="text-sm font-black tracking-tight text-white truncate">{selectedCase.location.name}</h2>
+            <p className="mt-0.5 text-[10px] text-slate-500">{venueCases.length} capture{venueCases.length !== 1 ? 's' : ''} · tap to view profile</p>
+          </button>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 px-1 mb-1">Cases</p>
         </div>
-
-        <div className="max-h-[calc(100dvh - 15.5rem)] overflow-y-auto">
+        <div className="flex-1 overflow-y-auto">
           {venueCases.map((caseData) => {
             const caseProfile = getDecisionProfile(caseData);
+            const isSelected = selectedCase.id === caseData.id && mainTab === 'case';
             return (
               <button
                 key={caseData.id}
                 type="button"
-                onClick={() => selectCase(caseData.id)}
+                onClick={() => handleSelectCase(caseData.id)}
                 className={cn(
                   "w-full border-b border-slate-800 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.03]",
-                  selectedCase.id === caseData.id && "bg-blue-500/10"
+                  isSelected && "bg-blue-500/10"
                 )}
               >
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-300">{caseData.id}</p>
-                  <span className="text-[10px] font-black text-white">{trackIdentityLabel(caseData)}</span>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-300 truncate">{caseData.id.slice(0, 8)}…</p>
+                  <span className="text-[9px] font-black text-slate-500 shrink-0">{trackIdentityLabel(caseData)}</span>
                 </div>
                 <h3 className="truncate text-xs font-black text-white">{caseData.songAssessment.title}</h3>
-                <p className="mt-1 text-[10px] text-slate-500">{format(caseData.timestamp, 'MMM d, HH:mm')} · {caseProfile.action}</p>
+                <p className="mt-0.5 text-[10px] text-slate-500">{format(caseData.timestamp, 'MMM d, HH:mm')} · {caseProfile.action}</p>
               </button>
             );
           })}
         </div>
       </aside>
 
-      <main className="overflow-y-auto p-5">
-        <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400">{selectedCase.id} · active case</p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight text-white">Evidence against {selectedCase.location.name}</h1>
-              <p className="mt-2 max-w-3xl text-xs font-medium leading-5 text-slate-400">
-                This page keeps the authority action rail bound to the case selected here while the center view shows every case and evidence package recorded against the venue.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Venue value</p>
-                <p className="mt-1 text-xl font-black text-blue-300">₹{(venueValue / 1000).toFixed(0)}k</p>
-              </div>
-              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Current stage</p>
-                <p className="mt-1 text-xs font-black text-white">{selectedCase.stage}</p>
-              </div>
-            </div>
-          </div>
-        </section>
+      {/* Main area — tab-switched between venue profile and case wizard */}
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        {/* Tab bar */}
+        <div className="flex items-center gap-1 border-b border-white/10 bg-[#0d0d0f] px-4 py-2 shrink-0">
+          <button
+            onClick={() => setMainTab('venue')}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors",
+              mainTab === 'venue' ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"
+            )}
+          >
+            Venue profile
+          </button>
+          <button
+            onClick={() => setMainTab('case')}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors",
+              mainTab === 'case' ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-300"
+            )}
+          >
+            Case review · {selectedCase.songAssessment.title || selectedCase.id.slice(0, 8)}
+          </button>
+        </div>
 
-        <section className="mt-4 space-y-4">
-          {venueCases.map((caseData) => (
-            <div key={caseData.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => selectCase(caseData.id)}
-                  className="text-left"
-                >
-                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-400">{caseData.id} · {format(caseData.timestamp, 'MMM d, yyyy HH:mm')}</p>
-                  <h2 className="mt-2 text-xl font-black tracking-tight text-white">{caseData.songAssessment.title}</h2>
-                  <p className="mt-1 text-xs font-medium text-slate-400">{caseData.songAssessment.artists.join(', ')} · {caseData.musicLabel}</p>
-                </button>
-                <div className="flex flex-wrap gap-2">
-                  <span className="rounded-full border border-slate-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">{caseData.stage}</span>
-                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-300">{getTrustPassCount(caseData)}/5 trust</span>
-                </div>
-              </div>
-
-              <div className="mb-4 grid gap-3">
-                {caseData.evidenceVaults.map((vault) => {
-                  const isExpanded = expandedVaultIds.has(vault.id);
-                  const videoUrl = vault.videoUrl || caseData.videoProofUrl || caseData.absoluteProof.smallVideoUrl;
-                  return (
-                    <div key={vault.id} className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/50">
-                      <button
-                        type="button"
-                        onClick={() => toggleVault(vault.id)}
-                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 p-3 text-left transition-colors hover:bg-white/[0.03]"
-                      >
-                        <div className="min-w-0">
-                          <div className="mb-2 flex flex-wrap items-center gap-2">
-                            <p className="truncate text-sm font-black text-white">{vault.name}</p>
-                            <span className={cn(
-                              "rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-widest",
-                              vault.moreProofRequested ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                            )}>
-                              {vault.moreProofRequested ? 'Proof requested' : 'Reviewable'}
-                            </span>
-                          </div>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
-                            {format(vault.timestamp, 'MMM d, HH:mm')} · {vault.images.length} images · {videoUrl ? 'video attached' : 'no video'}
-                          </p>
-                        </div>
-                        <ChevronDown className={cn("h-4 w-4 text-slate-500 transition-transform", isExpanded && "rotate-180 text-blue-300")} />
-                      </button>
-
-                      <AnimatePresence initial={false}>
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="overflow-hidden border-t border-slate-800"
-                          >
-                            <div className="p-4">
-                              <RawVideoPanel caseData={caseData} />
-                            </div>
-                            <AuthorityStyleEvidencePackage
-                              caseData={caseData}
-                              vault={vault}
-                              onRequestMoreProof={onRequestMoreProof}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="mt-4 space-y-5">
-                <ReviewReadinessPanel caseData={caseData} />
-                <SignalEvidencePanel caseData={caseData} compact />
-                <RawAnalysisPanel caseData={caseData} />
-              </div>
-            </div>
-          ))}
-        </section>
-      </main>
-
-      <AuthorityActionsPanel
-        selectedCase={selectedCase}
-        blockingQuestions={blockingQuestions}
-        onApplyRecommendedAction={applyRecommendedAction}
-        onUpdateStage={onUpdateStage}
-        setActiveTab={setActiveTab}
-        setListTab={setListTab}
-        onRunSignalAnalysis={onRunSignalAnalysis}
-        onRunDemucs={onRunDemucs}
-        isSignalAnalysisRunning={runningSignalAnalysisIds.has(selectedCase.id)}
-        isDemucsRunning={runningDemucsIds.has(selectedCase.id)}
-        compact
-      />
+        {/* Content */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {mainTab === 'venue' ? (
+            <VenueProfilePanel venueCases={venueCases} />
+          ) : (
+            <CaseReviewWizard
+              caseData={selectedCase}
+              onUpdateStage={onUpdateStage}
+              onRunDemucs={onRunDemucs}
+              isDemucsRunning={runningDemucsIds.has(selectedCase.id)}
+              onSendToAgentQueue={handleSendToAgentQueue}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
 
 function VenueCaseStack({
   venueCases,
@@ -3819,7 +5171,7 @@ function AuthorityCaseFactsRail({
   ];
 
   return (
-    <aside className="border-l border-white/10 bg-[#0d0d0f] p-5 text-slate-100 max-2xl:hidden">
+    <aside className="p-5 text-slate-100 h-full">
       <div className="sticky top-0">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
@@ -3904,6 +5256,8 @@ function AuthorityDecisionCockpit({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkActionStage, setBulkActionStage] = useState<CaseStage | null>(null);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
 
   const prioritizedCases = useMemo(() => {
     let filtered = [...cases]
@@ -3976,17 +5330,45 @@ function AuthorityDecisionCockpit({
   };
 
   return (
-    <div className="grid h-full grid-cols-[340px_minmax(0,1fr)_360px] overflow-hidden bg-[#09090b] text-slate-100 max-2xl:grid-cols-[340px_minmax(0,1fr)] max-xl:grid-cols-1 max-xl:overflow-y-auto">
-      <aside className="border-r border-white/10 bg-[#0d0d0f] max-xl:border-r-0 flex flex-col h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden bg-[#09090b] text-slate-100">
+      <aside
+        style={{
+          width: leftCollapsed ? '48px' : '340px',
+          minWidth: leftCollapsed ? '48px' : '340px',
+          transition: 'width 200ms cubic-bezier(0.4,0,0.2,1), min-width 200ms cubic-bezier(0.4,0,0.2,1)',
+        }}
+        className="border-r border-white/10 bg-[#0d0d0f] flex flex-col h-full overflow-hidden relative"
+      >
+        {leftCollapsed ? (
+          <div className="flex flex-col items-center gap-3 p-3 border-b border-white/10">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-[#141417] text-sky-200">
+              <Columns className="h-4 w-4" />
+            </div>
+            <button
+              onClick={() => setLeftCollapsed(false)}
+              title="Expand panel"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.07] transition-colors"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
         <div className="border-b border-white/10 p-5">
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-[#141417] text-sky-200">
               <Columns className="h-4 w-4" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <h2 className="text-lg font-black tracking-tight text-white">Signal Console</h2>
               <p className="text-xs font-medium text-slate-500">Directed authority intake</p>
             </div>
+            <button
+              onClick={() => setLeftCollapsed(true)}
+              title="Collapse panel"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.07] transition-colors shrink-0"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
           </div>
           <div className="flex items-center gap-2 rounded-md border border-white/10 bg-[#141417] px-3 py-2">
             <Search className="h-4 w-4 text-slate-500" />
@@ -4020,7 +5402,8 @@ function AuthorityDecisionCockpit({
             )}
           </div>
         </div>
-        {selectedIds.size > 0 && (
+        )}
+        {!leftCollapsed && selectedIds.size > 0 && (
           <div className="border-t border-white/10 bg-blue-500/10 p-4">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-black text-blue-300">{selectedIds.size} case{selectedIds.size !== 1 ? 's' : ''} selected</p>
@@ -4057,7 +5440,7 @@ function AuthorityDecisionCockpit({
             </div>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto min-h-0">
+        {!leftCollapsed && <div className="flex-1 overflow-y-auto min-h-0">
           {prioritizedCases.length === 0 ? (
             <div className="p-5">
               <PanelState type="empty" message="No active cases available." />
@@ -4122,10 +5505,10 @@ function AuthorityDecisionCockpit({
               </button>
             );
           })}
-        </div>
+        </div>}
       </aside>
 
-      <main className="overflow-y-auto h-full">
+      <main className="flex-1 overflow-y-auto h-full min-w-0">
         <AuthorityConsoleMetrics
           selectedCase={selectedCase}
           venueCases={venueCases}
@@ -4142,7 +5525,7 @@ function AuthorityDecisionCockpit({
                   </span>
                 )}
               </div>
-              <h1 className="mt-4 text-3xl font-black tracking-tight text-white">{selectedCase.location.name}</h1>
+              <h1 className="mt-4 text-5xl font-black tracking-tight text-white leading-none">{selectedCase.location.name}</h1>
               <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-400">
                 Venue-first intake: detected songs are grouped under the venue, with every attached case available as the evidence route.
               </p>
@@ -4189,12 +5572,45 @@ function AuthorityDecisionCockpit({
         </div>
       </main>
       {sourceContext && (
-        <AuthorityCaseFactsRail
-          selectedCase={selectedCase}
-          profile={profile}
-          sourceContext={sourceContext}
-          blockingQuestions={blockingQuestions}
-        />
+        <div
+          style={{
+            width: rightCollapsed ? '48px' : '360px',
+            minWidth: rightCollapsed ? '48px' : '360px',
+            transition: 'width 200ms cubic-bezier(0.4,0,0.2,1), min-width 200ms cubic-bezier(0.4,0,0.2,1)',
+          }}
+          className="border-l border-white/10 bg-[#0d0d0f] flex flex-col h-full overflow-hidden"
+        >
+          {rightCollapsed ? (
+            <div className="flex flex-col items-center gap-3 p-3">
+              <button
+                onClick={() => setRightCollapsed(false)}
+                title="Expand case detail"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.07] transition-colors"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-y-auto h-full">
+              <div className="flex items-center justify-between px-5 pt-5 pb-0">
+                <span />
+                <button
+                  onClick={() => setRightCollapsed(true)}
+                  title="Collapse case detail"
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.07] transition-colors"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <AuthorityCaseFactsRail
+                selectedCase={selectedCase}
+                profile={profile}
+                sourceContext={sourceContext}
+                blockingQuestions={blockingQuestions}
+              />
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -4538,12 +5954,14 @@ function LitigationClaimReadiness({
   );
 }
 
-function NavItem({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
+function NavItem({ active, onClick, icon, label, collapsed }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string, collapsed?: boolean }) {
   return (
-    <button 
+    <button
       onClick={onClick}
+      title={collapsed ? label : undefined}
       className={cn(
         "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-label relative z-10",
+        collapsed && "justify-center px-2",
         active ? "text-text-primary" : "text-text-tertiary hover:text-text-secondary"
       )}
     >
@@ -4555,11 +5973,11 @@ function NavItem({ active, onClick, icon, label }: { active: boolean, onClick: (
         />
       )}
       {icon}
-      <span className="hidden md:block transition-opacity duration-200">{label}</span>
-      {active && (
-        <motion.div 
-          layoutId="active-dot" 
-          className="absolute right-3 w-1.5 h-1.5 rounded-full bg-blue-500 hidden md:block" 
+      {!collapsed && <span className="transition-opacity duration-200">{label}</span>}
+      {active && !collapsed && (
+        <motion.div
+          layoutId="active-dot"
+          className="absolute right-3 w-1.5 h-1.5 rounded-full bg-blue-500"
         />
       )}
     </button>

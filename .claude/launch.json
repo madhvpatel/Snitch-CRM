@@ -5,7 +5,8 @@
       "name": "crm",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3000
+      "port": 5173,
+      "autoPort": true
     }
   ]
 }

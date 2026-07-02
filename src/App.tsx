@@ -1569,26 +1569,14 @@ const getPlaybackSourceProfile = (caseData: Case) => {
   ].some((signal) => evidenceText.includes(signal));
 
   if (hasLivePerformance) {
-    return {
-      sourceType: 'live' as const,
-      label: 'Live performer evidence',
-      evidenceNeed: 'Show the performer, stage, instruments, microphone, or explicit snitch confirmation.'
-    };
+    return { sourceType: 'live' as const, label: 'Live performer evidence', evidenceNeed: '' };
   }
 
   if (hasRecordedPlayback) {
-    return {
-      sourceType: 'playback' as const,
-      label: 'Recorded music playback',
-      evidenceNeed: 'Show the recording was played through speakers, TV, PA, DJ system, or another venue playback source.'
-    };
+    return { sourceType: 'playback' as const, label: 'Recorded music playback', evidenceNeed: '' };
   }
 
-  return {
-    sourceType: 'unknown' as const,
-    label: 'Source not classified',
-    evidenceNeed: 'Classify the source as venue playback, DJ playback, TV/video playback, or live performer evidence.'
-  };
+  return { sourceType: 'unknown' as const, label: 'Source not classified', evidenceNeed: '' };
 };
 
 const getViolationMandateProfile = (caseData: Case) => {
@@ -1604,9 +1592,7 @@ const getViolationMandateProfile = (caseData: Case) => {
       bodies,
       sourceType: sourceProfile.sourceType,
       label: isPlayback ? 'Composition + sound recording venue playback' : 'Composition + sound recording public venue use',
-      evidenceNeed: isPlayback
-        ? 'Show the song and sound recording were played back in the venue through speakers, TV, PA, DJ system, or similar source.'
-        : 'Show the song composition and the commercial sound recording were used in a public or customer-facing venue setting.'
+      evidenceNeed: ''
     };
   }
 
@@ -1615,17 +1601,12 @@ const getViolationMandateProfile = (caseData: Case) => {
       bodies,
       sourceType: sourceProfile.sourceType,
       label: isPlayback ? 'Sound recording venue playback / communication' : 'Sound recording public performance / communication',
-      evidenceNeed: 'Show the recorded track was played to the public or customers through venue speakers, DJ systems, screens, or similar playback.'
+      evidenceNeed: ''
     };
   }
 
   if (hasNovex) {
-    return {
-      bodies,
-      sourceType: sourceProfile.sourceType,
-      label: 'Assigned repertoire venue-license breach',
-      evidenceNeed: 'Show the captured recording belongs to Novex-controlled repertoire and was used in a licensed-use venue context.'
-    };
+    return { bodies, sourceType: sourceProfile.sourceType, label: 'Assigned repertoire venue-license breach', evidenceNeed: '' };
   }
 
   if (hasIPRS) {
@@ -1633,18 +1614,11 @@ const getViolationMandateProfile = (caseData: Case) => {
       bodies,
       sourceType: sourceProfile.sourceType,
       label: isPlayback ? 'Musical work venue playback' : 'Musical work public venue use',
-      evidenceNeed: isPlayback
-        ? 'Show the underlying musical work was used through recorded playback in a commercial, event, hospitality, or customer-facing setting.'
-        : 'Show the underlying musical or literary work was publicly used in a commercial, event, hospitality, or customer-facing setting.'
+      evidenceNeed: ''
     };
   }
 
-  return {
-    bodies,
-    sourceType: sourceProfile.sourceType,
-    label: 'Rights-body mandate not mapped',
-    evidenceNeed: 'Map the case to IPRS, PPL, Novex, or another mandate before selecting the violation posture.'
-  };
+  return { bodies, sourceType: sourceProfile.sourceType, label: 'Rights-body mandate not mapped', evidenceNeed: '' };
 };
 
 const getLivePerformanceEvidenceProfile = (caseData: Case) => {
@@ -2070,19 +2044,11 @@ const detectSourceContext = (caseData: Case) => {
   const hasLimit = /\binconclusive\b|\bunavailable\b|\bno installed\b|\bnot clearly visible\b|\bmotion blur\b|\blimited view\b|\bobstruction\b/.test(text);
 
   if (hasVenuePlayback) {
-    return {
-      status: 'usable' as const,
-      label: 'venue playback',
-      provenance: 'Evidence text points to recorded playback through a venue speaker, PA, TV, DJ, or room playback source.'
-    };
+    return { status: 'usable' as const, label: 'venue playback', provenance: '' };
   }
 
   if (hasPersonalPlayback) {
-    return {
-      status: 'advisory' as const,
-      label: 'personal or small-device playback',
-      provenance: 'Evidence text points to laptop, phone, earbuds, portable speaker, or another small-device source. This needs source confirmation.'
-    };
+    return { status: 'advisory' as const, label: 'personal or small-device playback', provenance: '' };
   }
 
   return {
@@ -2090,7 +2056,7 @@ const detectSourceContext = (caseData: Case) => {
     label: 'source inconclusive',
     provenance: sourceClass === 'inconclusive'
       ? `${classifierText} could not reliably classify venue playback versus personal-device/live source${confidenceText}.`
-      : 'The package does not clearly classify whether audio came from venue playback, a personal device, or a live performer.'
+      : ''
   };
 };
 
@@ -2153,7 +2119,7 @@ const buildSignalEvidenceLayers = (caseData: Case): SignalEvidenceLayer[] => {
       affectsForensicScore: true,
       kind: 'Hard fact',
       contribution: 'Critical',
-      provenance: `${videoCount} video asset(s). Media hash ${caseData.trustGates.mediaHashKey ? 'present' : 'missing'}; payload signature ${caseData.trustGates.payloadSignature ? 'verified' : 'not verified'}; clock skew ${caseData.trustGates.clockSkewDetection ? 'passed' : 'open'}.`,
+      provenance: `${videoCount} video asset(s) · hash: ${caseData.trustGates.mediaHashKey ? 'present' : 'missing'} · signature: ${caseData.trustGates.payloadSignature ? 'verified' : 'not verified'} · clock skew: ${caseData.trustGates.clockSkewDetection ? 'passed' : 'open'}`,
       storedAs: 'assets + media_integrity_checks',
       evidence: ['raw_video_asset', 'media_hash_gate', 'payload_signature', 'clock_skew_gate']
     },
@@ -2176,7 +2142,7 @@ const buildSignalEvidenceLayers = (caseData: Case): SignalEvidenceLayer[] => {
       affectsForensicScore: true,
       kind: 'External fact',
       contribution: 'Critical',
-      provenance: hasTrack ? `${caseData.songAssessment.title} by ${caseData.songAssessment.artists.join(', ')} is attached. ${demucsComplete ? 'Demucs stems are available.' : 'Stem deconstruction is absent or incomplete.'}` : 'No resolved song identity is attached.',
+      provenance: hasTrack ? `${caseData.songAssessment.title} · ${caseData.songAssessment.artists.join(', ')}${caseData.songAssessment.isrc ? ` · ISRC: ${caseData.songAssessment.isrc}` : ''} · stems: ${demucsComplete ? 'complete' : 'pending'}` : '',
       storedAs: 'audio_identifications',
       evidence: ['derived_audio', 'fingerprint_attempts', 'song_identity', 'stem_artifacts']
     },
@@ -2198,7 +2164,7 @@ const buildSignalEvidenceLayers = (caseData: Case): SignalEvidenceLayer[] => {
       affectsForensicScore: true,
       kind: 'Enrichment factor',
       contribution: 'Modifier',
-      provenance: imageCount ? `${imageCount} frame/image asset(s) enrich venue identity and source context. Visual output remains advisory and must not be treated as standalone proof.` : 'No visual frame assets are attached.',
+      provenance: imageCount ? `${imageCount} frame/image asset(s) · advisory visual enrichment only` : '',
       storedAs: 'visual_assessments',
       evidence: ['key_frames', 'venue_identity_cues', 'playback_equipment_cues', 'obstruction_flags']
     },
@@ -2209,7 +2175,7 @@ const buildSignalEvidenceLayers = (caseData: Case): SignalEvidenceLayer[] => {
       affectsForensicScore: false,
       kind: 'Partner data required',
       contribution: 'Business gate',
-      provenance: rightsKnown ? `Rights context is ${caseData.songAssessment.rightsAssociation}. License status still requires IPRS/PPL/Novex partnership data or verified license artifacts.` : 'Rights context is pending because partner rights/license data is not connected yet. This is expected for now and is excluded from the forensic score.',
+      provenance: rightsKnown ? `Rights association: ${caseData.songAssessment.rightsAssociation}` : '',
       storedAs: 'merchant_master + license_status',
       evidence: ['rights_association', 'merchant_record', 'tariff_match', 'license_status']
     }
@@ -3400,9 +3366,9 @@ function CaseReviewWizard({
 
           {!immutablePass && !immutableOverride && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5">
-              <p className="text-sm font-black text-red-300 mb-1">Integrity failure — cannot proceed to review</p>
+              <p className="text-sm font-black text-red-300 mb-1">Integrity failure</p>
               <p className="text-xs text-slate-400 leading-5 mb-4">
-                One or more immutable gates have failed. This capture will not hold up in court. The recommended action is to return this to the agent queue for a clean re-capture.
+                Failed: {immutableGates.filter(g => !caseData.trustGates[g.key]).map(g => g.label).join(', ')}
               </p>
               <div className="flex gap-3">
                 <button
@@ -3524,20 +3490,16 @@ function CaseReviewWizard({
             <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Detection Duration</p>
               <p className="text-base font-black text-white leading-tight">
-                {caseData.audioDeconstruction?.summary
-                  ? 'See analysis'
-                  : 'Full capture'}
+                {caseData.audioDeconstruction?.summary || 'Full capture'}
               </p>
-              <p className="mt-1 text-[11px] text-slate-400">Relevant for fine calculation</p>
             </div>
             <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">Peak Identification</p>
               <p className="text-base font-black text-white leading-tight">
                 {caseData.audioDeconstruction?.peakSelectionStem
-                  ? `Via ${caseData.audioDeconstruction.peakSelectionStem}`
-                  : demucsComplete ? 'Stem analysis' : 'ACRCloud match'}
+                  ? `Stem: ${caseData.audioDeconstruction.peakSelectionStem}`
+                  : demucsComplete ? 'Stem analysis' : 'ACRCloud'}
               </p>
-              <p className="mt-1 text-[11px] text-slate-400">Point of clearest audio</p>
             </div>
           </div>
 
@@ -3619,10 +3581,7 @@ function CaseReviewWizard({
 
             {venueRecognized === false && songRecognized === false && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
-                <p className="text-xs font-black text-amber-300 mb-1">Neither confirmed — geofencing becomes critical</p>
-                <p className="text-[11px] text-slate-400 leading-5">
-                  If you cannot confirm the venue or the song, the geofencing data is the last resort to establish where this capture was taken. The next step will evaluate that data.
-                </p>
+                <p className="text-xs font-black text-amber-300">Venue and song both unconfirmed — geofencing step is primary location proof</p>
               </div>
             )}
 
@@ -3697,9 +3656,9 @@ function CaseReviewWizard({
 
           {!geoOk && !geofenceIsAuxiliary && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5">
-              <p className="text-sm font-black text-red-300 mb-1">Geofence failure — venue unverifiable</p>
+              <p className="text-sm font-black text-red-300 mb-1">Geofence failure</p>
               <p className="text-xs text-slate-400 leading-5 mb-4">
-                The admin did not confirm the venue visually and the GPS data has a discrepancy. There is insufficient location proof to proceed. Send back to agent for a clean capture with confirmed venue entry geolocation.
+                Venue signal: {humanizeToken(geoBucket)} · Within envelope: {withinEnvelope === true ? 'yes' : withinEnvelope === false ? 'no' : 'unknown'}{closestMeters != null ? ` · Closest: ${closestMeters.toFixed(0)} m` : ''}
               </p>
               <button
                 onClick={() => onSendToAgentQueue(caseData.id)}
@@ -3790,34 +3749,38 @@ function CaseReviewWizard({
         {
           label: 'Live source score',
           value: score,
-          tooltip: "The audio classifier's probability that the captured sound came from a live venue PA system rather than a personal device or stream. Above 70% is considered reliable evidence of live performance.",
+          tooltip: `source_analysis.score: ${(score * 100).toFixed(0)} / 100`,
         },
         {
           label: 'Classifier confidence',
           value: confidence,
-          tooltip: 'How certain the classifier is about its own verdict. A high source score with low confidence means the model is guessing — both must be high to trust the output. Below 50% requires human review.',
+          tooltip: `source_analysis.confidence: ${(confidence * 100).toFixed(0)}%`,
         },
         {
           label: 'Venue acoustic signals',
           value: Math.min(venueIdentitySignals.length / 4, 1),
-          tooltip: `Venue-specific acoustic fingerprints detected (${venueIdentitySignals.length} signal${venueIdentitySignals.length !== 1 ? 's' : ''}). These are room characteristics — reverb patterns, crowd noise, echo decay — that are hard to fake and anchor the recording to a real commercial space.`,
+          tooltip: venueIdentitySignals.length
+            ? `visual_analysis.venueIdentitySignals (${venueIdentitySignals.length}): ${venueIdentitySignals.join(', ')}`
+            : 'visual_analysis.venueIdentitySignals: none',
         },
         {
           label: 'Audio equipment detected',
           value: Math.min(equipment.length / 3, 1),
-          tooltip: `PA speakers, mixing desks, or amplifiers identified in the visual frames (${equipment.length} item${equipment.length !== 1 ? 's' : ''}). Equipment presence confirms professional audio playback rather than a phone or laptop speaker.`,
+          tooltip: equipment.length
+            ? `visual_analysis.visibleEquipment (${equipment.length}): ${equipment.join(', ')}`
+            : 'visual_analysis.visibleEquipment: none',
         },
         {
           label: 'Playback context',
           value: playbackContext ? (playbackContext === 'inconclusive' ? 0.2 : 0.85) : 0,
-          tooltip: `Whether the visual AI resolved the playback situation — live band, DJ set, background music, or streaming. Context: "${playbackContext || 'not determined'}". Knowing the context determines which licence type was violated.`,
+          tooltip: `visual_analysis.playbackContext: ${playbackContext || 'not set'}`,
         },
         {
           label: 'Signage / OCR',
           value: signageOcr ? 1 : 0,
           tooltip: signageOcr
-            ? `Readable text was extracted from video frames: "${signageOcr.slice(0, 100)}". Visible signage is the strongest single corroboration signal — it anchors the capture to a named location and is difficult to dispute.`
-            : 'No readable text found in any captured frame. Signage (venue name, price boards, banners) is the strongest visual anchor and would significantly strengthen this case.',
+            ? `visual_analysis.signageOcr: "${signageOcr.slice(0, 120)}"`
+            : 'visual_analysis.signageOcr: not detected',
         },
       ];
 
@@ -10130,7 +10093,7 @@ function LitigationDashboard({
                       </AnimatePresence>
 
                       <p className="text-center text-[9px] font-bold text-text-quaternary uppercase tracking-widest">
-                        Strategy based on IPRS statutory guidelines and venue infraction history.
+                        Notice generated for {currentCase?.location?.name || 'venue'} · mandate: {currentDossier?.mandateProfile?.label || currentCase?.songAssessment?.rightsAssociation || '—'}
                       </p>
                     </div>
                   </div>
